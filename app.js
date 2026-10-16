@@ -139,7 +139,7 @@ function recordSummary() {
   const cur = d.event.no;
   const hist = d.history || [];
   const before = hist.filter(h => h.no < cur);
-  const n = before.filter(h => h.attended).length + 1;
+  const n = before.filter(h => h.attended).length + (d.event.attended ? 1 : 0);
   const join = d.me.join;
   let perfect = false;
   if (join < cur) {
@@ -262,18 +262,16 @@ const SCREENS = {
     const d = S.data;
     const me = d.me, ev = d.event;
     const hello = me.nick || (me.name + ' さん');
-    const self = selfCard();
     const sum = recordSummary();
-    const seals = [];
-    if (self) {
-      (self.clears || []).forEach((c, i) => { if (c) seals.push(seal('M' + (i + 1), 56)); });
-      if (self.cert) seals.push(seal('cert', 56));
-    }
-    const fam = cards().filter(c => c.kind !== 'self');
+    const attend = ev.attended
+      ? '<div class="attend"><span class="stamp">' + flower(40) + '<span>参加</span></span><span>参加の記録がつきました</span></div>'
+      : ev.checkinOpen
+        ? '<button class="btn big" data-act="openCheckin">参加の合言葉を入れる</button>'
+        : '';
     return '' +
       '<header class="hello">' +
         '<div class="avatar" aria-hidden="true">' + esc(firstChar(me.nick || me.name)) + '</div>' +
-        '<div><div class="hello-t">' + esc(hello) + '、ようこそ！</div><div class="sub">' + esc(me.name) + '</div></div>' +
+        '<div><div class="hello-t"><span class="nb">' + esc(hello) + '、</span><span class="nb">ようこそ！</span></div><div class="sub">' + esc(me.name) + '</div></div>' +
       '</header>' +
 
       '<section class="box event">' +
@@ -285,6 +283,8 @@ const SCREENS = {
         '</dl>' +
         (ev.place ? '<button class="link-btn" data-act="place">場所を見る →</button>' : '') +
         extLink(ev.detailUrl, '当日の詳しいご案内を見る', 'link block') +
+        attend +
+        (ev.cards ? '<button class="btn big" data-act="openCard">第' + esc(ev.no) + '回 ミッションカードを開く</button>' : '') +
       '</section>' +
 
       '<section class="box">' +
@@ -292,13 +292,7 @@ const SCREENS = {
         '<button class="link-btn" data-act="record">スタンプを見る →</button>' +
       '</section>' +
 
-      '<section class="box">' +
-        '<h2 class="h2">獲得したシール</h2>' +
-        (seals.length ? '<div class="seals">' + seals.join('') + '</div>' : '<p class="sub">まだありません。ミッションをクリアするともらえます</p>') +
-        (fam.length ? '<p class="fam">ご家族のカード：' + fam.map(c => esc(c.name) + ' ' + clearCount(c) + '/3').join('、') + '</p>' : '') +
-      '</section>' +
-
-      '<button class="btn big" data-act="openCard">第' + esc(ev.no) + '回 ミッションカードを開く</button>';
+      '';
   },
 
   place() {
@@ -352,7 +346,7 @@ const SCREENS = {
       certHtml(c, d.me.name, d.event, d.texts, null, S.justCleared && S.justCleared[c.id + 'cert']) +
       (c.cert
         ? '<p class="hint ok">おめでとう！ 第' + esc(d.event.no) + '回の表彰状が完成しました</p><button class="btn ghost" data-act="openCard">ミッションカードにもどる</button>'
-        : '<p class="hint">社長の認定シールをもらおう。' + esc(staffName('cert')) + 'に合言葉を聞いてね</p><button class="btn big gold" data-act="openClear">合言葉を入力する</button>');
+        : '<p class="hint">社長の認定スタンプをもらおう。' + esc(staffName('cert')) + 'に合言葉を聞いてね</p><button class="btn big gold" data-act="openClear">合言葉を入力する</button>');
   },
 
   record() {
@@ -368,7 +362,7 @@ const SCREENS = {
       const time = span + (h.gather ? (span ? '（集合 ' + esc(h.gather) + '）' : '集合 ' + esc(h.gather)) : '');
       const nCards = Number(h.cards) || 0;
       const cardBtn = isCur
-        ? '<button class="link-btn" data-act="openCard">ミッションカードを開く →</button>'
+        ? (d.event.cards ? '<button class="link-btn" data-act="openCard">ミッションカードを開く →</button>' : '')
         : nCards > 0
           ? '<button class="link-btn" data-act="openPast" data-no="' + esc(h.no) + '">ミッションカードを見る（' + nCards + '枚） →</button>'
           : '';
@@ -472,7 +466,7 @@ function certHtml(c, selfName, ev, texts, staffList, pop) {
       '<p class="cert-body">' + nl2br(body || '') + '</p>' +
       '<div class="cert-foot">' +
         '<div class="cert-sign"><div>' + fmtDate(ev.date, false) + '</div><div>' + esc(texts.signature || '') + '</div></div>' +
-        '<div class="cert-seal">' + (c.cert ? seal('cert', 74, pop, staffList) : dotted(staffList ? '' : 'ここに<br>社長の<br>認定シール', true)) + '</div>' +
+        '<div class="cert-seal">' + (c.cert ? seal('cert', 74, pop, staffList) : dotted(staffList ? '' : 'ここに<br>社長の<br>認定スタンプ', true)) + '</div>' +
       '</div>' +
     '</div>' +
   '</div>';
@@ -506,7 +500,7 @@ function renderPopup() {
   } else if (p.type === 'result') {
     const names = p.okNames;
     const role = p.role;
-    const head = role === 'cert' ? '社長認定シールをゲットしました！' : esc(staffName(role)) + 'のシールをゲットしました！';
+    const head = role === 'cert' ? '社長認定スタンプをゲットしました！' : esc(staffName(role)) + 'のスタンプをゲットしました！';
     inner = (p.okCount
         ? '<div class="celebrate">' + seal(role, 120, true) + '</div>' +
           '<h2 class="h2 center-t">' + head + '</h2>' +
@@ -517,6 +511,18 @@ function renderPopup() {
             (o.status === 'already' ? 'もうクリア済みです' : '3つクリアしてから、社長の認定をもらってね') + '</li>').join('') + '</ul>'
         : '') +
       '<button class="btn' + (role === 'cert' && p.okCount ? ' gold' : '') + '" data-act="closeResult">' + (role === 'cert' && p.okCount ? '表彰状を見る' : 'OK') + '</button>';
+  } else if (p.type === 'checkin') {
+    inner = '<h2 class="h2">参加の合言葉</h2>' +
+      '<p>受付で教えてもらった合言葉を入れてね</p>' +
+      '<input id="cpass" class="input" type="text" maxlength="50" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-autofocus aria-label="参加の合言葉">' +
+      '<p id="pmsg" class="pmsg" role="alert"></p>' +
+      '<button class="btn" data-act="doCheckin">参加する</button>' +
+      '<button class="btn ghost" data-act="closePopup">とじる</button>';
+  } else if (p.type === 'checked') {
+    inner = '<div class="celebrate"><span class="stamp big">' + flower(96) + '<span>参加</span></span></div>' +
+      '<h2 class="h2 center-t">' + (p.already ? 'もう参加の記録がついています' : '参加の記録がつきました！') + '</h2>' +
+      '<p class="center-t">第' + esc(S.data.event.no) + '回 全員集合会へようこそ</p>' +
+      '<button class="btn" data-act="closePopup">OK</button>';
   } else if (p.type === 'addCard') {
     const full = cards().length >= maxCards();
     inner = '<h2 class="h2">家族のカードを追加</h2>' +
@@ -713,6 +719,7 @@ const ACTIONS = {
   place() { go('place'); },
   record() { go('record'); },
   openCard() {
+    if (!(S.data && S.data.event && S.data.event.cards)) { go('home'); return; }
     if (S.screen === 'home') { const s = selfCard(); if (s) setCur(s.id); }
     go('card');
   },
@@ -744,6 +751,19 @@ const ACTIONS = {
   addCard() { openPopup({ type: 'addCard' }); },
   askDelete() { const c = curCard(); if (c && c.kind !== 'self') openPopup({ type: 'delete', id: c.id }); },
   openClear() { openPopup({ type: 'clear' }); },
+  openCheckin() { openPopup({ type: 'checkin' }); },
+  async doCheckin() {
+    const el = document.getElementById('cpass');
+    const pass = el ? el.value : '';
+    if (!pass.trim() || Array.from(pass).length > 50) { popupMsg('合言葉を入力してね'); return; }
+    await withBusy(async () => {
+      const j = await api('checkin', [pass]);
+      if (j && j.error) { popupMsg(msgOf(j.error)); return; }
+      setData(j.data);
+      S.screen = 'home';
+      openPopup({ type: 'checked', already: !!j.already });
+    });
+  },
   closePopup() { closePopup(); },
   closeResult() {
     const p = S.popup;
@@ -833,6 +853,7 @@ function onKey(ev) {
   if (ev.key !== 'Enter' || ev.isComposing) return;
   const id = ev.target && ev.target.id;
   if (id === 'pass') { ev.preventDefault(); ACTIONS.doClear(); }
+  else if (id === 'cpass') { ev.preventDefault(); ACTIONS.doCheckin(); }
   else if (id === 'famName') { ev.preventDefault(); }
 }
 
