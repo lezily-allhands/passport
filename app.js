@@ -5,14 +5,15 @@
  * すべてログイン後に API から受け取る。
  */
 const CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/<デプロイID>/exec', // Apps Script の「ウェブアプリ」URL（/dev ではなく /exec）
-  CLIENT_ID: '<OAuthクライアントID>.apps.googleusercontent.com',
+  API_URL: 'https://script.google.com/macros/s/AKfycbztUcoOaQIWsNumgEbnBcWHF0160vQye3eG9gt3U8XyVtgSYEuzitBa01pVFYe9ZWA/exec', // Apps Script の「ウェブアプリ」URL（/dev ではなく /exec）
+  CLIENT_ID: '417170064468-r6fshqd1spp0fqlb9088a2i976bl6f4q.apps.googleusercontent.com',
 };
 
 /* ================================================================== */
 /* 状態・保存                                                          */
 /* ================================================================== */
-const S = { sid: '', data: null, cur: '', screen: 'boot', popup: null, busy: false, deniedEmail: '', bootError: false };
+const S = { sid: '', data: null, cur: '', screen: 'boot', popup: null, busy: false, deniedEmail: '', bootError: false, past: null };
+const PAST = new Map(); // 過去の年の応答（メモリだけ。保存しない）
 
 const store = {
   get(k) { try { return sessionStorage.getItem(k) || ''; } catch (_) { return ''; } },
@@ -29,7 +30,6 @@ const MSG = {
   denied: 'この操作はできません',
   notfound: 'カードが見つかりません',
   wrongcode: '合言葉がちがいます。もう一度たしかめてね',
-  locked: 'まちがいが続いたので、10分ほど待ってからためしてね',
   notopen: 'いまは合言葉を受け付けていません',
   busy: '少し待ってから、もう一度ためしてね',
   retry: 'もう一度ログインしてください',
@@ -50,6 +50,10 @@ function esc(v) {
 }
 function safeUrl(u) { return typeof u === 'string' && /^https:\/\/[^\s"'<>]+$/.test(u) ? u : ''; }
 function safeColor(c, d) { return typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c : d; }
+/** 5-5：顔写真は data:image/(jpeg|png|webp);base64,… だけを使う */
+function safePhoto(p) {
+  return typeof p === 'string' && p.length <= 45000 && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/.test(p) ? p : '';
+}
 function nl2br(s) { return esc(s).replace(/\r?\n/g, '<br>'); }
 function themeHtml(t) { return String(t || '').trim().split(/[\s　]+/).filter(Boolean).map(esc).join('<br>'); }
 const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
@@ -124,12 +128,9 @@ function findCard(id) { return cards().find(c => c.id === id) || null; }
 function setCur(id) { S.cur = id || ''; store.set('zp_cur', S.cur); }
 function clearCount(c) { return (c.clears || []).filter(Boolean).length; }
 function isKid(c) { return !!c && c.kind === 'kid'; }
-function staffOf(role) { return ((S.data && S.data.staff) || []).find(s => s.role === role) || null; }
-function staffName(role) { const s = staffOf(role); return s && s.name ? s.name : (role === 'cert' ? '社長' : '実行委員'); }
-function missionsFor(c) {
-  const m = (S.data && S.data.missions) || {};
-  return (isKid(c) ? m.kid : m.adult) || [];
-}
+function staffOf(role, list) { return (list || (S.data && S.data.staff) || []).find(s => s.role === role) || null; }
+function staffName(role, list) { const s = staffOf(role, list); return s && s.name ? s.name : (role === 'cert' ? '社長' : '実行委員'); }
+function missionsFor(c) { return (c && Array.isArray(c.missions)) ? c.missions : []; }
 function cardLabel(c) { return c.name || ''; }
 
 /** 参加回数（今回より前の参加数＋1）と皆勤賞 */
@@ -154,38 +155,20 @@ function recordSummary() {
 /* ================================================================== */
 /* イラスト（固有の人を表さない）                                         */
 /* ================================================================== */
-let gid = 0;
+/** 実行委員の顔シール（写真）。写真がない・形式が違うときは頭文字 */
 function face(st, size) {
   const s = st || {};
-  const f = s.face || {};
   const cert = s.role === 'cert';
   const ring = safeColor(s.color, cert ? '#C99A2E' : '#E8892F');
-  const hair = safeColor(f.hair, '#3B2A20');
-  const id = 'f' + (++gid);
-  const longHair = f.long ? '<path d="M22 56 Q20 22 50 22 Q80 22 78 56 L80 92 L20 92 Z" fill="' + hair + '"/>' : '';
-  const glasses = f.glasses
-    ? '<g fill="none" stroke="#2E2A26" stroke-width="2.2"><circle cx="41" cy="55" r="7"/><circle cx="59" cy="55" r="7"/><path d="M48 55 h4"/></g>'
-    : '';
-  return '<svg class="face" width="' + size + '" height="' + size + '" viewBox="0 0 100 100" aria-hidden="true">' +
-    '<defs>' +
-      (cert ? '<linearGradient id="' + id + 'g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F7E7B8"/><stop offset=".5" stop-color="#C99A2E"/><stop offset="1" stop-color="#E9C766"/></linearGradient>' : '') +
-      '<clipPath id="' + id + 'c"><circle cx="50" cy="50" r="41"/></clipPath>' +
-    '</defs>' +
-    '<circle cx="50" cy="50" r="48" fill="' + (cert ? 'url(#' + id + 'g)' : ring) + '"/>' +
-    '<circle cx="50" cy="50" r="41" fill="#FFF7EC"/>' +
-    '<g clip-path="url(#' + id + 'c)">' +
-      longHair +
-      '<path d="M30 100 Q30 78 50 78 Q70 78 70 100 Z" fill="' + ring + '" opacity=".85"/>' +
-      '<ellipse cx="50" cy="55" rx="21" ry="23" fill="#F6D3B6"/>' +
-      '<path d="M28 52 Q26 28 50 27 Q74 28 72 52 Q68 40 56 38 Q46 44 34 42 Q30 46 28 52 Z" fill="' + hair + '"/>' +
-      '<circle cx="41" cy="56" r="2.6" fill="#2E2A26"/><circle cx="59" cy="56" r="2.6" fill="#2E2A26"/>' +
-      '<circle cx="36" cy="64" r="4" fill="#F4A3A0" opacity=".55"/><circle cx="64" cy="64" r="4" fill="#F4A3A0" opacity=".55"/>' +
-      '<path d="M44 67 Q50 72 56 67" fill="none" stroke="#2E2A26" stroke-width="2.2" stroke-linecap="round"/>' +
-      glasses +
-    '</g></svg>';
+  const photo = safePhoto(s.photo);
+  const edge = cert ? 'background:linear-gradient(135deg,#F7E7B8,#C99A2E 55%,#E9C766)' : 'background:' + ring;
+  const inner = photo
+    ? '<img src="' + esc(photo) + '" alt="' + esc(s.name || '') + '">'
+    : '<span class="face-ini" style="background:' + ring + ';font-size:' + Math.round(size * 0.42) + 'px">' + esc(firstChar(s.name)) + '</span>';
+  return '<span class="face" style="width:' + size + 'px;height:' + size + 'px;' + edge + '">' + inner + '</span>';
 }
-function seal(role, size, pop) {
-  const st = staffOf(role) || { role };
+function seal(role, size, pop, list) {
+  const st = staffOf(role, list) || { role };
   const cert = role === 'cert';
   const c = safeColor(st.color, cert ? '#C99A2E' : '#E8892F');
   return '<span class="seal' + (pop ? ' pop' : '') + (cert ? ' gold' : '') + '">' + face(st, size) +
@@ -235,7 +218,9 @@ function render() {
   if (!app) return;
   const fn = SCREENS[S.screen] || SCREENS.boot;
   app.innerHTML = '<main class="screen screen-' + esc(S.screen) + '">' + fn() + '</main>' + (S.popup ? renderPopup() : '');
-  app.dataset.kid = (S.screen === 'card' || S.screen === 'cert') && isKid(curCard()) ? '1' : '';
+  const pc = S.past && S.past.data && (S.past.data.cards || []).find(x => x.id === S.past.cur);
+  app.dataset.kid = ((S.screen === 'card' || S.screen === 'cert') && isKid(curCard())) ||
+    ((S.screen === 'pastCard' || S.screen === 'pastCert') && isKid(pc)) ? '1' : '';
   if (S.popup) {
     const f = app.querySelector('.modal [data-autofocus]');
     if (f) setTimeout(() => f.focus(), 30);
@@ -334,7 +319,6 @@ const SCREENS = {
     if (!c) return '<p>' + esc(MSG.notfound) + '</p>';
     const kid = isKid(c);
     const n = clearCount(c);
-    const ms = missionsFor(c);
     const list = cards();
     const chips = list.map(x =>
       '<button class="chip' + (x.id === c.id ? ' on' : '') + '" data-act="pick" data-id="' + esc(x.id) + '" aria-pressed="' + (x.id === c.id) + '">' +
@@ -343,26 +327,7 @@ const SCREENS = {
         ? '<button class="chip add" data-act="addCard">＋ 家族のカード</button>'
         : '<span class="chip-max">カードは' + maxCards() + '枚までです</span>');
 
-    const missionHtml = [0, 1, 2].map(i => {
-      const m = ms.find(x => x.no === i + 1) || { who: '', label: '', q: '', color: '#E8892F' };
-      const role = 'M' + (i + 1);
-      const st = staffOf(role);
-      const sc = safeColor(st && st.color, '#E8892F');
-      const mc = safeColor(m.color, '#E8892F');
-      const done = !!(c.clears || [])[i];
-      return '<div class="mission' + (done ? ' done' : '') + '">' +
-        '<div class="m-main">' +
-          '<div class="m-no" style="color:' + sc + '">MISSION ' + (i + 1) + '</div>' +
-          '<p class="m-text">' +
-            '<span class="tag" style="background:' + sc + '">' + (kid ? 'だれに' : '誰に') + '</span> ' + esc(m.who) + '<br>' +
-            (m.label ? '<span class="tag" style="background:' + mc + '">' + esc(m.label) + '</span> ' : '') + esc(m.q) +
-          '</p>' +
-          '<textarea class="ans" rows="2" maxlength="200" data-card="' + esc(c.id) + '" data-idx="' + (i + 1) + '" placeholder="' +
-            (kid ? 'こたえをかこう' : '聞いたことをメモ') + '" aria-label="MISSION ' + (i + 1) + ' のこたえ">' + esc((c.answers || [])[i] || '') + '</textarea>' +
-        '</div>' +
-        '<div class="m-slot">' + (done ? seal(role, 62, S.justCleared && S.justCleared[c.id + role]) : dotted(esc(staffName(role)) + 'の<br>CLEAR')) + '</div>' +
-      '</div>';
-    }).join('');
+    const missionHtml = missionRows(c, null, true);
 
     return '<div class="topbar"><button class="back" data-act="home">← ホーム</button></div>' +
       (d.event.theme ? '<div class="theme small">' + themeHtml(d.event.theme) + '</div>' : '') +
@@ -383,22 +348,8 @@ const SCREENS = {
     const d = S.data;
     const c = curCard();
     if (!c || clearCount(c) < 3) { setTimeout(() => go('card'), 0); return ''; } // 3つ未満なら card に戻す
-    const kid = isKid(c);
-    const name = c.kind === 'self' ? d.me.name : c.name;
-    const body = kid ? d.texts.certKid : d.texts.certAdult;
     return '<div class="topbar"><button class="back" data-act="openCard">← ミッションカード</button></div>' +
-      '<div class="cert">' +
-        '<div class="cert-in">' +
-          '<div class="cert-ev">第' + esc(d.event.no) + '回 全員集合会</div>' +
-          '<h1 class="cert-h">表彰状</h1>' +
-          '<div class="cert-name">' + esc(name) + (kid ? ' さん' : ' 殿') + '</div>' +
-          '<p class="cert-body">' + nl2br(body) + '</p>' +
-          '<div class="cert-foot">' +
-            '<div class="cert-sign"><div>' + fmtDate(d.event.date, false) + '</div><div>' + esc(d.texts.signature) + '</div></div>' +
-            '<div class="cert-seal">' + (c.cert ? seal('cert', 74, S.justCleared && S.justCleared[c.id + 'cert']) : dotted('ここに<br>社長の<br>認定シール', true)) + '</div>' +
-          '</div>' +
-        '</div>' +
-      '</div>' +
+      certHtml(c, d.me.name, d.event, d.texts, null, S.justCleared && S.justCleared[c.id + 'cert']) +
       (c.cert
         ? '<p class="hint ok">おめでとう！ 第' + esc(d.event.no) + '回の表彰状が完成しました</p><button class="btn ghost" data-act="openCard">ミッションカードにもどる</button>'
         : '<p class="hint">社長の認定シールをもらおう。' + esc(staffName('cert')) + 'に合言葉を聞いてね</p><button class="btn big gold" data-act="openClear">合言葉を入力する</button>');
@@ -415,12 +366,19 @@ const SCREENS = {
         : isCur ? '<span class="st-cur">今回</span>' : '<span class="st-no">不参加</span>';
       const span = h.start && h.end ? esc(h.start) + '〜' + esc(h.end) : esc(h.start || '');
       const time = span + (h.gather ? (span ? '（集合 ' + esc(h.gather) + '）' : '集合 ' + esc(h.gather)) : '');
+      const nCards = Number(h.cards) || 0;
+      const cardBtn = isCur
+        ? '<button class="link-btn" data-act="openCard">ミッションカードを開く →</button>'
+        : nCards > 0
+          ? '<button class="link-btn" data-act="openPast" data-no="' + esc(h.no) + '">ミッションカードを見る（' + nCards + '枚） →</button>'
+          : '';
       return '<li class="box rec">' +
         '<div class="rec-main">' +
           '<div class="kicker">第' + esc(h.no) + '回</div>' +
           (h.theme ? '<div class="rec-theme">' + esc(h.theme) + '</div>' : '') +
           '<div class="sub">' + fmtDate(h.date, true) + (time ? ' ' + time : '') + '</div>' +
           (h.place ? '<div class="sub">' + esc(h.place) + ' ' + extLink(mapUrl(h.map || h.place), '地図') + '</div>' : '') +
+          cardBtn +
           (safeUrl(h.photoUrl) ? '<div class="photo">' + extLink(h.photoUrl, '写真を見る（Googleドライブ）') + '<div class="note">Lezilyのアカウントで開いてください</div></div>' : '') +
         '</div>' +
         '<div class="rec-st">' + status + '</div>' +
@@ -431,7 +389,94 @@ const SCREENS = {
       '<section class="box">' + summaryHtml(sum) + '</section>' +
       '<ul class="recs">' + items + '</ul>';
   },
+
+  /* 4-12：過去の年（見るだけ） */
+  pastCard() {
+    const p = S.past;
+    if (!p || !p.data) { setTimeout(() => go('record'), 0); return ''; }
+    const d = p.data;
+    const list = d.cards || [];
+    const c = list.find(x => x.id === p.cur) || list[0];
+    if (!c) return '<div class="topbar"><button class="back" data-act="record">← 参加記録</button></div><p>' + esc(MSG.notfound) + '</p>';
+    const kid = isKid(c);
+    const chips = list.map(x =>
+      '<button class="chip' + (x.id === c.id ? ' on' : '') + '" data-act="pickPast" data-id="' + esc(x.id) + '" aria-pressed="' + (x.id === c.id) + '">' +
+        '<span class="chip-n">' + esc(cardLabel(x)) + '</span><span class="chip-c">' + clearCount(x) + '/3</span></button>').join('');
+    return '<div class="topbar"><button class="back" data-act="record">← 参加記録</button></div>' +
+      '<div class="kicker center-t">第' + esc(d.event.no) + '回</div>' +
+      (d.event.theme ? '<div class="theme small">' + themeHtml(d.event.theme) + '</div>' : '') +
+      '<h1 class="h1 center-t">ミッションカード</h1>' +
+      '<div class="chips" role="group" aria-label="カードの切り替え">' + chips + '</div>' +
+      (c.kind !== 'self' ? '<div class="owner"><span>' + esc(c.name) + ' さんのカード</span></div>' : '') +
+      missionRows(c, d.staff || [], false) +
+      (clearCount(c) >= 3
+        ? '<button class="btn big gold" data-act="pastCert">' + (kid ? 'ひょうしょうじょうを見る →' : '表彰状を見る →') + '</button>'
+        : '');
+  },
+
+  pastCert() {
+    const p = S.past;
+    const d = p && p.data;
+    const c = d && (d.cards || []).find(x => x.id === p.cur);
+    if (!c || clearCount(c) < 3) { setTimeout(() => go(d ? 'pastCard' : 'record'), 0); return ''; }
+    const selfName = c.kind === 'self' ? (S.data && S.data.me.name) || c.name : c.name;
+    return '<div class="topbar"><button class="back" data-act="pastCardBack">← ミッションカードにもどる</button></div>' +
+      certHtml(c, selfName, d.event, d.texts || {}, d.staff || [], false) +
+      '<button class="btn ghost" data-act="pastCardBack">ミッションカードにもどる</button>';
+  },
 };
+
+/** ミッション3つ。editable=false のときは見るだけ（こたえは文字で表示、未CLEARは文言なしの点線） */
+function missionRows(c, staffList, editable) {
+  const kid = isKid(c);
+  const ms = missionsFor(c);
+  return [0, 1, 2].map(i => {
+    const m = ms[i] || { who: '', label: '', q: '', color: '#E8892F' };
+    const role = 'M' + (i + 1);
+    const st = staffOf(role, staffList);
+    const sc = safeColor(st && st.color, '#E8892F');
+    const mc = safeColor(m.color, '#E8892F');
+    const done = !!(c.clears || [])[i];
+    const ans = (c.answers || [])[i] || '';
+    const answerHtml = editable
+      ? '<textarea class="ans" rows="2" maxlength="200" data-card="' + esc(c.id) + '" data-idx="' + (i + 1) + '" placeholder="' +
+          (kid ? 'こたえをかこう' : '聞いたことをメモ') + '" aria-label="MISSION ' + (i + 1) + ' のこたえ">' + esc(ans) + '</textarea>'
+      : (ans ? '<p class="ans-view">' + esc(ans) + '</p>' : '');
+    const slot = done
+      ? seal(role, 62, editable && S.justCleared && S.justCleared[c.id + role], staffList)
+      : editable ? dotted(esc(staffName(role, staffList)) + 'の<br>CLEAR') : dotted('');
+    return '<div class="mission' + (done ? ' done' : '') + '">' +
+      '<div class="m-main">' +
+        '<div class="m-no" style="color:' + sc + '">MISSION ' + (i + 1) + '</div>' +
+        '<p class="m-text">' +
+          '<span class="tag" style="background:' + sc + '">' + (kid ? 'だれに' : '誰に') + '</span> ' + esc(m.who) + '<br>' +
+          (m.label ? '<span class="tag" style="background:' + mc + '">' + esc(m.label) + '</span> ' : '') + esc(m.q) +
+        '</p>' +
+        answerHtml +
+      '</div>' +
+      '<div class="m-slot">' + slot + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+/** 表彰状の本体（今回・過去の年で共通） */
+function certHtml(c, selfName, ev, texts, staffList, pop) {
+  const kid = isKid(c);
+  const name = c.kind === 'self' ? selfName : c.name;
+  const body = kid ? texts.certKid : texts.certAdult;
+  return '<div class="cert">' +
+    '<div class="cert-in">' +
+      '<div class="cert-ev">第' + esc(ev.no) + '回 全員集合会</div>' +
+      '<h1 class="cert-h">表彰状</h1>' +
+      '<div class="cert-name">' + esc(name) + (kid ? ' さん' : ' 殿') + '</div>' +
+      '<p class="cert-body">' + nl2br(body || '') + '</p>' +
+      '<div class="cert-foot">' +
+        '<div class="cert-sign"><div>' + fmtDate(ev.date, false) + '</div><div>' + esc(texts.signature || '') + '</div></div>' +
+        '<div class="cert-seal">' + (c.cert ? seal('cert', 74, pop, staffList) : dotted(staffList ? '' : 'ここに<br>社長の<br>認定シール', true)) + '</div>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
 
 function summaryHtml(sum) {
   return '<p class="count">' + (sum.first ? 'はじめての全員集合会！' : 'これまでに <b>' + sum.n + '</b> 回 参加') + '</p>' +
@@ -608,6 +653,8 @@ function toLogin() {
   S.cur = '';
   AQ.forEach(q => clearTimeout(q.timer));
   AQ.clear();
+  PAST.clear();
+  S.past = null;
   go('login');
 }
 function logout() {
@@ -670,6 +717,25 @@ const ACTIONS = {
     go('card');
   },
   pick(el) { setCur(el.dataset.id); render(); },
+  pickPast(el) { if (S.past) { S.past.cur = el.dataset.id; render(); } },
+  pastCert() { go('pastCert'); },
+  pastCardBack() { go('pastCard'); },
+  async openPast(el) {
+    const no = Number(el.dataset.no);
+    if (!Number.isInteger(no)) return;
+    const show = data => {
+      const first = (data.cards || [])[0];
+      S.past = { no: no, data: data, cur: first ? first.id : '' };
+      go('pastCard');
+    };
+    if (PAST.has(no)) { show(PAST.get(no)); return; }
+    await withBusy(async () => {
+      const j = await api('past', [no]);
+      if (!j || j.error) { toast(msgOf(j && j.error)); return; }
+      PAST.set(no, j);
+      show(j);
+    });
+  },
   cert() {
     const c = curCard();
     if (!c || clearCount(c) < 3) { go('card'); return; }
