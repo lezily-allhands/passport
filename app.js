@@ -373,7 +373,7 @@ const SCREENS = {
           '<div class="sub">' + fmtDate(h.date, true) + (time ? ' ' + time : '') + '</div>' +
           (h.place ? '<div class="sub">' + esc(h.place) + ' ' + extLink(mapUrl(h.map || h.place), '地図') + '</div>' : '') +
           cardBtn +
-          (safeUrl(h.photoUrl) ? '<div class="photo">' + extLink(h.photoUrl, '写真を見る（Googleドライブ）') + '<div class="note">Lezilyのアカウントで開いてください</div></div>' : '') +
+          (safeUrl(h.photoUrl) ? '<div class="photo">' + photoLink(h.photoUrl) + '<div class="note">Lezilyのアカウントで開いてください</div></div>' : '') +
         '</div>' +
         '<div class="rec-st">' + status + '</div>' +
       '</li>';
@@ -472,6 +472,15 @@ function certHtml(c, selfName, ev, texts, staffList, pop) {
   '</div>';
 }
 
+/** 写真フォルダへのリンク。注意書き（文面シートの photo_note）があれば、先に確認を出す */
+function photoNote() { return (S.data && S.data.texts && S.data.texts.photoNote) || ''; }
+function photoLink(url) {
+  const u = safeUrl(url);
+  if (!u) return '';
+  if (!photoNote()) return extLink(u, '写真を見る（Googleドライブ）');
+  return '<button class="link-btn" data-act="openPhoto" data-url="' + esc(u) + '">写真を見る（Googleドライブ） →</button>';
+}
+
 function summaryHtml(sum) {
   return '<p class="count">' + (sum.first ? 'はじめての全員集合会！' : 'これまでに <b>' + sum.n + '</b> 回 参加') + '</p>' +
     (sum.perfect ? '<span class="badge">皆勤賞</span>' : '');
@@ -523,6 +532,11 @@ function renderPopup() {
       '<h2 class="h2 center-t">' + (p.already ? 'もう参加の記録がついています' : '参加の記録がつきました！') + '</h2>' +
       '<p class="center-t">第' + esc(S.data.event.no) + '回 全員集合会へようこそ</p>' +
       '<button class="btn" data-act="closePopup">OK</button>';
+  } else if (p.type === 'photo') {
+    inner = '<h2 class="h2">写真・動画を見る前に</h2>' +
+      '<p class="pre">' + nl2br(photoNote()) + '</p>' +
+      extLink(p.url, 'わかりました、見る', 'btn photo-go') +
+      '<button class="btn ghost" data-act="closePopup" data-autofocus>もどる</button>';
   } else if (p.type === 'addCard') {
     const full = cards().length >= maxCards();
     inner = '<h2 class="h2">家族のカードを追加</h2>' +
@@ -752,6 +766,7 @@ const ACTIONS = {
   askDelete() { const c = curCard(); if (c && c.kind !== 'self') openPopup({ type: 'delete', id: c.id }); },
   openClear() { openPopup({ type: 'clear' }); },
   openCheckin() { openPopup({ type: 'checkin' }); },
+  openPhoto(el) { const u = safeUrl(el.dataset.url); if (u) openPopup({ type: 'photo', url: u }); },
   async doCheckin() {
     const el = document.getElementById('cpass');
     const pass = el ? el.value : '';
@@ -836,6 +851,8 @@ const ACTIONS = {
 };
 
 function onClick(ev) {
+  const go2 = ev.target.closest('a.photo-go');
+  if (go2) { setTimeout(closePopup, 0); return; } // ドライブを開いたら確認を閉じる
   const el = ev.target.closest('[data-act]');
   if (!el || !document.getElementById('app').contains(el)) return;
   const act = el.dataset.act;
