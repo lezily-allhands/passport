@@ -12,7 +12,7 @@ const CONFIG = {
 /* ================================================================== */
 /* 状態・保存                                                          */
 /* ================================================================== */
-const S = { sid: '', data: null, cur: '', screen: 'boot', popup: null, busy: false, deniedEmail: '', bootError: false, past: null };
+const S = { sid: '', data: null, cur: '', screen: 'boot', popup: null, busy: false, deniedEmail: '', bootError: false, past: null, roundNo: 0 };
 const PAST = new Map(); // 過去の年の応答（メモリだけ。保存しない）
 
 const store = {
@@ -137,7 +137,8 @@ function cardLabel(c) { return c.name || ''; }
 function recordSummary() {
   const d = S.data;
   const cur = d.event.no;
-  const hist = d.history || [];
+  // 1.5回のような特別な回は、参加回数・皆勤賞には数えない（整数の回だけ）
+  const hist = (d.history || []).filter(h => Number.isInteger(h.no));
   const before = hist.filter(h => h.no < cur);
   const n = before.filter(h => h.attended).length + (d.event.attended ? 1 : 0);
   const join = d.me.join;
@@ -355,33 +356,53 @@ const SCREENS = {
     const hist = (d.history || []).slice().sort((a, b) => b.no - a.no);
     const items = hist.map(h => {
       const isCur = h.no === d.event.no;
-      const status = h.attended
-        ? '<span class="stamp">' + flower(46) + '<span>参加</span></span>'
-        : isCur ? '<span class="st-cur">今回</span>' : '<span class="st-no">不参加</span>';
-      const span = h.start && h.end ? esc(h.start) + '〜' + esc(h.end) : esc(h.start || '');
-      const time = span + (h.gather ? (span ? '（集合 ' + esc(h.gather) + '）' : '集合 ' + esc(h.gather)) : '');
-      const nCards = Number(h.cards) || 0;
-      const cardBtn = isCur
-        ? (d.event.cards ? '<button class="link-btn" data-act="openCard">ミッションカードを開く →</button>' : '')
-        : nCards > 0
-          ? '<button class="link-btn" data-act="openPast" data-no="' + esc(h.no) + '">ミッションカードを見る（' + nCards + '枚） →</button>'
-          : '';
-      return '<li class="box rec">' +
-        '<div class="rec-main">' +
-          '<div class="kicker">第' + esc(h.no) + '回</div>' +
-          (h.theme ? '<div class="rec-theme">' + esc(h.theme) + '</div>' : '') +
-          '<div class="sub">' + fmtDate(h.date, true) + (time ? ' ' + time : '') + '</div>' +
-          (h.place ? '<div class="sub">' + esc(h.place) + ' ' + extLink(mapUrl(h.map || h.place), '地図') + '</div>' : '') +
-          cardBtn +
-          (safeUrl(h.photoUrl) ? '<div class="photo">' + photoLink(h.photoUrl) + '<div class="note">Lezilyのアカウントで開いてください</div></div>' : '') +
-        '</div>' +
-        '<div class="rec-st">' + status + '</div>' +
-      '</li>';
+      return '<li><button class="box rec" data-act="openRound" data-no="' + esc(h.no) + '">' +
+        '<span class="rec-main">' +
+          '<span class="kicker">第' + esc(h.no) + '回' + (isCur ? '（今回）' : '') + '</span>' +
+          (h.theme ? '<span class="rec-theme">' + esc(h.theme) + '</span>' : '') +
+          '<span class="sub">' + fmtDate(h.date, true) + '</span>' +
+          '<span class="rec-more">写真・くわしく見る →</span>' +
+        '</span>' +
+        '<span class="rec-st">' + roundStatus(h, isCur) + '</span>' +
+      '</button></li>';
     }).join('');
     return '<div class="topbar"><button class="back" data-act="home">← ホーム</button></div>' +
       '<h1 class="h1">これまでの参加記録</h1>' +
       '<section class="box">' + summaryHtml(sum) + '</section>' +
       '<ul class="recs">' + items + '</ul>';
+  },
+
+  /* 参加記録の1回分：くわしい情報・写真・ミッションカード */
+  round() {
+    const d = S.data;
+    const h = (d.history || []).find(x => x.no === S.roundNo);
+    if (!h) { setTimeout(() => go('record'), 0); return ''; }
+    const isCur = h.no === d.event.no;
+    const span = h.start && h.end ? esc(h.start) + '〜' + esc(h.end) : esc(h.start || '');
+    const time = span + (h.gather ? (span ? '（集合 ' + esc(h.gather) + '）' : '集合 ' + esc(h.gather)) : '');
+    const nCards = Number(h.cards) || 0;
+    const cardBtn = isCur
+      ? (d.event.cards ? '<button class="btn" data-act="openCard">ミッションカードを開く</button>' : '')
+      : nCards > 0
+        ? '<button class="btn" data-act="openPast" data-no="' + esc(h.no) + '">ミッションカードを見る（' + nCards + '枚）</button>'
+        : '';
+    const photo = safeUrl(h.photoUrl)
+      ? photoLink(h.photoUrl, true) + '<p class="note">Googleドライブで開きます。Lezilyのアカウントで開いてください</p>'
+      : '<p class="sub">写真はまだありません</p>';
+    return '<div class="topbar"><button class="back" data-act="record">← 参加記録</button></div>' +
+      '<section class="box round-head">' +
+        '<div class="rec-main">' +
+          '<div class="kicker">第' + esc(h.no) + '回 全員集合会</div>' +
+          (h.theme ? '<h1 class="h1 round-theme">' + themeHtml(h.theme) + '</h1>' : '') +
+          '<div class="sub">' + fmtDate(h.date, true) + (time ? ' ' + time : '') + '</div>' +
+          (h.place ? '<div class="sub">' + esc(h.place) + ' ' + extLink(mapUrl(h.map || h.place), '地図') + '</div>' : '') +
+        '</div>' +
+        '<div class="rec-st">' + roundStatus(h, isCur) + '</div>' +
+      '</section>' +
+      '<section class="box">' +
+        '<h2 class="h2">写真・動画</h2>' + photo +
+      '</section>' +
+      (cardBtn ? '<section class="box"><h2 class="h2">ミッションカード</h2>' + cardBtn + '</section>' : '');
   },
 
   /* 4-12：過去の年（見るだけ） */
@@ -391,12 +412,12 @@ const SCREENS = {
     const d = p.data;
     const list = d.cards || [];
     const c = list.find(x => x.id === p.cur) || list[0];
-    if (!c) return '<div class="topbar"><button class="back" data-act="record">← 参加記録</button></div><p>' + esc(MSG.notfound) + '</p>';
+    if (!c) return '<div class="topbar"><button class="back" data-act="roundBack">← もどる</button></div><p>' + esc(MSG.notfound) + '</p>';
     const kid = isKid(c);
     const chips = list.map(x =>
       '<button class="chip' + (x.id === c.id ? ' on' : '') + '" data-act="pickPast" data-id="' + esc(x.id) + '" aria-pressed="' + (x.id === c.id) + '">' +
         '<span class="chip-n">' + esc(cardLabel(x)) + '</span><span class="chip-c">' + clearCount(x) + '/3</span></button>').join('');
-    return '<div class="topbar"><button class="back" data-act="record">← 参加記録</button></div>' +
+    return '<div class="topbar"><button class="back" data-act="roundBack">← 第' + esc(d.event.no) + '回にもどる</button></div>' +
       '<div class="kicker center-t">第' + esc(d.event.no) + '回</div>' +
       (d.event.theme ? '<div class="theme small">' + themeHtml(d.event.theme) + '</div>' : '') +
       '<h1 class="h1 center-t">ミッションカード</h1>' +
@@ -472,13 +493,19 @@ function certHtml(c, selfName, ev, texts, staffList, pop) {
   '</div>';
 }
 
+function roundStatus(h, isCur) {
+  return h.attended
+    ? '<span class="stamp">' + flower(46) + '<span>参加</span></span>'
+    : isCur ? '<span class="st-cur">今回</span>' : '<span class="st-no">不参加</span>';
+}
 /** 写真フォルダへのリンク。注意書き（文面シートの photo_note）があれば、先に確認を出す */
 function photoNote() { return (S.data && S.data.texts && S.data.texts.photoNote) || ''; }
-function photoLink(url) {
+function photoLink(url, big) {
   const u = safeUrl(url);
   if (!u) return '';
-  if (!photoNote()) return extLink(u, '写真を見る（Googleドライブ）');
-  return '<button class="link-btn" data-act="openPhoto" data-url="' + esc(u) + '">写真を見る（Googleドライブ） →</button>';
+  const label = big ? '写真・動画を見る' : '写真・動画を見る（Googleドライブ）';
+  if (!photoNote()) return extLink(u, label, big ? 'btn' : 'link');
+  return '<button class="' + (big ? 'btn' : 'link-btn') + '" data-act="openPhoto" data-url="' + esc(u) + '">' + label + '</button>';
 }
 
 function summaryHtml(sum) {
@@ -732,6 +759,8 @@ const ACTIONS = {
   home() { go('home'); },
   place() { go('place'); },
   record() { go('record'); },
+  openRound(el) { const no = Number(el.dataset.no); if (isFinite(no) && no > 0) { S.roundNo = no; go('round'); } },
+  roundBack() { go(S.roundNo ? 'round' : 'record'); },
   openCard() {
     if (!(S.data && S.data.event && S.data.event.cards)) { go('home'); return; }
     if (S.screen === 'home') { const s = selfCard(); if (s) setCur(s.id); }
