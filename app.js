@@ -12,7 +12,7 @@ const CONFIG = {
 /* ================================================================== */
 /* 状態・保存                                                          */
 /* ================================================================== */
-const S = { sid: '', data: null, cur: '', screen: 'boot', popup: null, busy: false, deniedEmail: '', bootError: false, past: null, roundNo: 0 };
+const S = { sid: '', data: null, cur: '', screen: 'boot', popup: null, busy: false, deniedEmail: '', bootError: false, past: null, roundNo: 0, pkey: '' };
 const PAST = new Map(); // 過去の年の応答（メモリだけ。保存しない）
 
 const store = {
@@ -34,6 +34,7 @@ const MSG = {
   busy: '少し待ってから、もう一度ためしてね',
   retry: 'もう一度ログインしてください',
   net: '通信できませんでした。電波のよいところで、もう一度ためしてね',
+  linkoff: 'このQRは使えなくなりました',
 };
 function msgOf(code) {
   if (code === 'toomany') return 'カードは' + maxCards() + '枚までです';
@@ -85,6 +86,7 @@ async function api(fn, args = []) {
   if (!r.ok) throw new Error('http ' + r.status);
   const j = await r.json();
   if (j && j.error === 'expired') { toLogin(); throw new Error('expired'); }
+  if (j && j.error === 'linkoff' && S.pkey) { endPartner(); throw new Error('expired'); }
   return j;
 }
 
@@ -323,6 +325,20 @@ const SCREENS = {
         : '<span class="chip-max">カードは' + maxCards() + '枚までです</span>');
 
     const missionHtml = missionRows(c, null, true);
+    const shared = c.kind === 'adult' && c.shareUntil;
+
+    if (S.pkey) {
+      return '<div class="pbar">' + (d.owner && d.owner.nick ? esc(d.owner.nick) + 'から届いた' : '') + esc(c.name) + ' さんのカードです</div>' +
+        (d.event.theme ? '<div class="theme small">' + themeHtml(d.event.theme) + '</div>' : '') +
+        '<h1 class="h1 center-t">ミッションカード</h1>' +
+        '<p class="lead">3つクリアしたら表彰状がひらきます</p>' +
+        missionHtml +
+        (n < 3
+          ? '<p class="hint">ミッションができたら、担当の実行委員に合言葉を聞いて入力してね（' + n + '/3 クリア）</p>' +
+            '<button class="btn big" data-act="openClear">合言葉を入力する</button>'
+          : '<button class="btn big gold" data-act="cert">3つ達成！ 表彰状を見る →</button>') +
+        '<p class="note center-t">このカードは今日の23:59まで使えます</p>';
+    }
 
     return '<div class="topbar"><button class="back" data-act="home">← ホーム</button></div>' +
       (d.event.theme ? '<div class="theme small">' + themeHtml(d.event.theme) + '</div>' : '') +
@@ -330,6 +346,9 @@ const SCREENS = {
       '<div class="chips" role="group" aria-label="カードの切り替え">' + chips + '</div>' +
       (c.kind !== 'self'
         ? '<div class="owner"><span>' + esc(c.name) + ' さんのカード</span><button class="mini" data-act="askDelete">このカードを削除</button></div>'
+        : '') +
+      (c.kind === 'adult'
+        ? '<button class="share-btn" data-act="openShare">' + (shared ? esc(c.name) + ' さんのスマホで使用中（QRを見る・止める）' : esc(c.name) + ' さんのスマホでも使う') + '</button>'
         : '') +
       '<p class="lead">' + (kid ? '3つ クリアしたら ひょうしょうじょうが ひらくよ' : '3つクリアしたら表彰状がひらきます') + '</p>' +
       missionHtml +
@@ -370,6 +389,15 @@ const SCREENS = {
       '<h1 class="h1">これまでの参加記録</h1>' +
       '<section class="box">' + summaryHtml(sum) + '</section>' +
       '<ul class="recs">' + items + '</ul>';
+  },
+
+  /* パートナー用QRが使えなくなったとき */
+  plink() {
+    return '<div class="login">' +
+      '<h1 class="title">全員集合会パスポート</h1>' +
+      '<div class="box"><h2 class="h2">このQRは使えなくなりました</h2>' +
+      '<p>QRが使えるのは、出した日の23:59までです。続けるときは、Lezilyのメンバーの方に、もう一度QRを出してもらってください</p></div>' +
+    '</div>';
   },
 
   /* 参加記録の1回分：くわしい情報・写真・ミッションカード */
@@ -474,6 +502,17 @@ function missionRows(c, staffList, editable) {
   }).join('');
 }
 
+/** ルビ（子どもの表彰状用）。文面シートでは {漢字|かな} と書く。大人の表彰状では漢字だけを出す */
+function rb(base, ruby) { return '<ruby>' + esc(base) + '<rt>' + esc(ruby) + '</rt></ruby>'; }
+function rubyText(s, kid) {
+  return nl2br(s).replace(/\{([^{}|<>]+)\|([^{}|<>]+)\}/g, (m, base, ruby) => kid ? '<ruby>' + base + '<rt>' + ruby + '</rt></ruby>' : base);
+}
+function kidDate(s) {
+  const p = parseDate(s);
+  if (!p) return esc(s || '');
+  return p.y + rb('年', 'ねん') + p.mo + rb('月', 'がつ') + p.d + rb('日', 'にち');
+}
+
 /** 表彰状の本体（今回・過去の年で共通） */
 function certHtml(c, selfName, ev, texts, staffList, pop) {
   const kid = isKid(c);
@@ -481,12 +520,14 @@ function certHtml(c, selfName, ev, texts, staffList, pop) {
   const body = kid ? texts.certKid : texts.certAdult;
   return '<div class="cert">' +
     '<div class="cert-in">' +
-      '<div class="cert-ev">第' + esc(ev.no) + '回 全員集合会</div>' +
-      '<h1 class="cert-h">表彰状</h1>' +
+      '<div class="cert-ev">' + (kid
+        ? rb('第', 'だい') + esc(ev.no) + rb('回', 'かい') + ' ' + rb('全員集合会', 'ぜんいんしゅうごうかい')
+        : '第' + esc(ev.no) + '回 全員集合会') + '</div>' +
+      '<h1 class="cert-h">' + (kid ? rb('表彰状', 'ひょうしょうじょう') : '表彰状') + '</h1>' +
       '<div class="cert-name">' + esc(name) + (kid ? ' さん' : ' 殿') + '</div>' +
-      '<p class="cert-body">' + nl2br(body || '') + '</p>' +
+      '<p class="cert-body">' + rubyText(body || '', kid) + '</p>' +
       '<div class="cert-foot">' +
-        '<div class="cert-sign"><div>' + fmtDate(ev.date, false) + '</div><div>' + esc(texts.signature || '') + '</div></div>' +
+        '<div class="cert-sign"><div>' + (kid ? kidDate(ev.date) : fmtDate(ev.date, false)) + '</div><div>' + rubyText(texts.signature || '', kid) + '</div></div>' +
         '<div class="cert-seal">' + (c.cert ? seal('cert', 74, pop, staffList) : dotted(staffList ? '' : 'ここに<br>社長の<br>認定スタンプ', true)) + '</div>' +
       '</div>' +
     '</div>' +
@@ -506,6 +547,19 @@ function photoLink(url, big) {
   const label = big ? '写真・動画を見る' : '写真・動画を見る（Googleドライブ）';
   if (!photoNote()) return extLink(u, label, big ? 'btn' : 'link');
   return '<button class="' + (big ? 'btn' : 'link-btn') + '" data-act="openPhoto" data-url="' + esc(u) + '">' + label + '</button>';
+}
+
+/** QRコード（qr.js の qrcode を使う。SVG の文字列） */
+function qrSvg(text) {
+  if (typeof window.qrcode !== 'function') return '<p class="pre">' + esc(text) + '</p>';
+  const q = window.qrcode(0, 'M');
+  q.addData(text);
+  q.make();
+  const n = q.getModuleCount(), m = 4, size = n + m * 2;
+  let d = '';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += 'M' + (c + m) + ' ' + (r + m) + 'h1v1h-1z';
+  return '<svg viewBox="0 0 ' + size + ' ' + size + '" role="img" aria-label="QRコード" shape-rendering="crispEdges">' +
+    '<rect width="' + size + '" height="' + size + '" fill="#fff"/><path d="' + d + '" fill="#000"/></svg>';
 }
 
 function summaryHtml(sum) {
@@ -578,6 +632,36 @@ function renderPopup() {
           '<p id="pmsg" class="pmsg" role="alert"></p>' +
           '<button class="btn" data-act="doAdd">追加する</button>') +
       '<button class="btn ghost" data-act="closePopup">とじる</button>';
+  } else if (p.type === 'share') {
+    const c = findCard(p.id);
+    const name = c ? esc(c.name) : '';
+    if (p.key) {
+      const url = location.origin + location.pathname + '#p=' + p.key;
+      inner = '<h2 class="h2">' + name + ' さんのスマホで読み取ってください</h2>' +
+        '<div class="qr">' + qrSvg(url) + '</div>' +
+        '<p class="center-t"><b>今日の23:59まで</b>使えます</p>' +
+        '<ul class="notes"><li>' + name + ' さんのスマホのカメラで読むと、このカードが開きます（ログインはいりません）</li>' +
+        '<li>開けるのはこのカード1枚だけです。写真やこれまでの記録は見えません</li>' +
+        '<li>こたえやスタンプは、このスマホのカードにも反映されます</li></ul>' +
+        '<button class="btn ghost" data-act="stopShare">QRを止める</button>' +
+        '<button class="btn" data-act="closePopup">とじる</button>';
+    } else if (c && c.shareUntil) {
+      inner = '<h2 class="h2">' + name + ' さんのスマホで使用中です</h2>' +
+        '<p>今日の23:59まで使えるQRが出ています。もう一度QRを表示するときは「QRを出し直す」を押してください（前のQRは使えなくなります）</p>' +
+        '<p id="pmsg" class="pmsg" role="alert"></p>' +
+        '<button class="btn" data-act="doShare">QRを出し直す</button>' +
+        '<button class="btn ghost" data-act="stopShare">QRを止める</button>' +
+        '<button class="btn ghost" data-act="closePopup">とじる</button>';
+    } else {
+      inner = '<h2 class="h2">' + name + ' さんのスマホでも使う</h2>' +
+        '<p>QRを出すと、' + name + ' さんが自分のスマホでこのカードを開けます。別々に行動していても、それぞれのスマホでミッションを進められます</p>' +
+        '<ul class="notes"><li>ログインやメールアドレスの登録はいりません</li>' +
+        '<li>開けるのはこのカード1枚だけです。写真やこれまでの記録は見えません</li>' +
+        '<li>QRは今日の23:59まで使えます。いつでも止められます</li></ul>' +
+        '<p id="pmsg" class="pmsg" role="alert"></p>' +
+        '<button class="btn" data-act="doShare">QRを出す</button>' +
+        '<button class="btn ghost" data-act="closePopup">とじる</button>';
+    }
   } else if (p.type === 'delete') {
     const c = findCard(p.id);
     inner = '<h2 class="h2">' + esc(c ? c.name : '') + ' さんのカードを削除しますか？</h2>' +
@@ -736,7 +820,7 @@ async function flushAnswer(id, idx) {
   const v = q.value;
   let ok = false;
   try {
-    const j = await api('saveAnswer', [id, idx, v]);
+    const j = S.pkey ? await api('pAnswer', [S.pkey, idx, v]) : await api('saveAnswer', [id, idx, v]);
     if (j && j.ok) ok = true;
     else if (j && j.error) toast(msgOf(j.error));
   } catch (e) {
@@ -794,6 +878,28 @@ const ACTIONS = {
   addCard() { openPopup({ type: 'addCard' }); },
   askDelete() { const c = curCard(); if (c && c.kind !== 'self') openPopup({ type: 'delete', id: c.id }); },
   openClear() { openPopup({ type: 'clear' }); },
+  openShare() { const c = curCard(); if (c && c.kind === 'adult') openPopup({ type: 'share', id: c.id }); },
+  async doShare() {
+    const id = S.popup && S.popup.id;
+    if (!id) return;
+    await withBusy(async () => {
+      const j = await api('shareCard', [id]);
+      if (j && j.error) { popupMsg(msgOf(j.error)); return; }
+      setData(j.data);
+      openPopup({ type: 'share', id: id, key: typeof j.key === 'string' && /^[0-9a-f]{64}$/.test(j.key) ? j.key : '' });
+    });
+  },
+  async stopShare() {
+    const id = S.popup && S.popup.id;
+    if (!id) return;
+    await withBusy(async () => {
+      const j = await api('stopShare', [id]);
+      if (j && j.error) { popupMsg(msgOf(j.error)); return; }
+      setData(j.data);
+      closePopup();
+      toast('QRを止めました');
+    });
+  },
   openCheckin() { openPopup({ type: 'checkin' }); },
   openPhoto(el) { const u = safeUrl(el.dataset.url); if (u) openPopup({ type: 'photo', url: u }); },
   async doCheckin() {
@@ -860,7 +966,7 @@ const ACTIONS = {
     else ids = curCard() ? [curCard().id] : [];
     if (!ids.length) { popupMsg('CLEARするカードを選んでね'); return; }
     await withBusy(async () => {
-      const j = await api('clear', [ids, pass]);
+      const j = S.pkey ? await api('pClear', [S.pkey, pass]) : await api('clear', [ids, pass]);
       if (j && j.error) { popupMsg(msgOf(j.error)); return; }
       const nameOf = id => { const c = (j.data.cards || []).find(x => x.id === id); return c ? c.name : ''; };
       setData(j.data);
@@ -908,6 +1014,7 @@ function onKey(ev) {
 /* ================================================================== */
 async function boot() {
   S.bootError = false;
+  if (S.pkey) { bootPartner(); return; }
   S.sid = store.get('zp_sid');
   S.cur = store.get('zp_cur');
   if (!S.sid) { go('login'); return; }
@@ -927,7 +1034,40 @@ async function boot() {
   go('home');
 }
 
+/* パートナー用QR（#p=キー）で開いたとき：ログインなしで、そのカード1枚だけ */
+async function bootPartner() {
+  S.screen = 'boot';
+  render();
+  let j;
+  try { j = await api('pGet', [S.pkey]); }
+  catch (e) {
+    if (e && e.message === 'expired') return;
+    S.bootError = true; render(); return;
+  }
+  if (!j || j.error || !j.data) { S.bootError = true; render(); toast(msgOf(j && j.error)); return; }
+  setData(j.data);
+  go('card');
+}
+function endPartner() {
+  S.pkey = '';
+  store.set('zp_pk', '');
+  S.data = null;
+  AQ.forEach(q => clearTimeout(q.timer));
+  AQ.clear();
+  go('plink');
+}
+function readPartnerKey() {
+  const m = /^#p=([0-9a-f]{64})$/.exec(location.hash || '');
+  if (m) {
+    store.set('zp_pk', m[1]);
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (_) { /* なし */ }
+  }
+  const k = store.get('zp_pk');
+  S.pkey = /^[0-9a-f]{64}$/.test(k) ? k : '';
+}
+
 function init() {
+  readPartnerKey();
   const app = document.getElementById('app');
   app.addEventListener('click', onClick);
   app.addEventListener('input', onInput);

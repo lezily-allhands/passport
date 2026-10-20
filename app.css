@@ -197,6 +197,9 @@ button, input, textarea { font: inherit; color: inherit; }
 }
 .cert-in { border: 1px solid var(--gold); padding: 22px 18px 18px; display: flex; flex-direction: column; gap: 10px; }
 .cert-ev { text-align: center; font-size: 14px; }
+.cert rt { font-size: .45em; font-weight: 400; letter-spacing: 0; }
+.cert-h rt { font-size: .32em; letter-spacing: .1em; }
+.cert-body { ruby-position: over; }
 .cert-h { text-align: center; font-family: var(--f-cert); font-weight: 700; font-size: 38px; letter-spacing: .4em; margin: 0 0 0 .4em; }
 .cert-name { text-align: center; font-size: 22px; font-weight: 700; border-bottom: 1px solid var(--gold); padding-bottom: 6px; }
 .cert-body { margin: 6px 0; text-align: center; line-height: 2; font-size: 16px; }
@@ -258,4 +261,19 @@ button, input, textarea { font: inherit; color: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* パートナー用QR */
+.share-btn {
+  display: block; width: 100%; min-height: 44px; margin: 4px 0 2px; padding: 8px 14px;
+  border: 2px dashed var(--accent); border-radius: 14px; background: var(--accent-soft);
+  color: var(--ink); font-weight: 800; text-align: center; cursor: pointer;
+}
+.qr { width: 220px; max-width: 70vw; margin: 4px auto; padding: 0; background: #fff; border-radius: 12px; }
+.qr svg { display: block; width: 100%; height: auto; }
+.notes { margin: 0; padding-left: 1.2em; font-size: 13px; color: var(--sub); }
+.notes li + li { margin-top: 4px; }
+.pbar {
+  margin: -4px 0 0; padding: 8px 12px; border-radius: 12px; background: var(--accent-soft);
+  font-weight: 800; font-size: 14px; text-align: center;
 }
