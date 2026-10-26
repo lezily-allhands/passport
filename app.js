@@ -346,7 +346,7 @@ const SCREENS = {
         '<p class="lead">3つクリアしたら表彰状がひらきます</p>' +
         missionHtml +
         (n < 3
-          ? '<p class="hint">ミッションができたら、担当の実行委員に合言葉を聞いて入力してね（' + n + '/3 クリア）</p>' +
+          ? '<p class="hint">ミッションができたら、こたえを書いて、担当の実行委員に合言葉を聞いて入力してね（' + n + '/3 クリア）</p>' +
             '<button class="btn big" data-act="openClear">合言葉を入力する</button>'
           : '<button class="btn big gold" data-act="cert">3つ達成！ 表彰状を見る →</button>') +
         '<p class="note center-t">このカードは今日の23:59まで使えます</p>';
@@ -365,7 +365,7 @@ const SCREENS = {
       '<p class="lead">' + (kid ? '3つ クリアしたら ひょうしょうじょうが ひらくよ' : '3つクリアしたら表彰状がひらきます') + '</p>' +
       missionHtml +
       (n < 3
-        ? '<p class="hint">ミッションができたら、担当の実行委員に合言葉を聞いて入力してね（' + n + '/3 クリア）</p>' +
+        ? '<p class="hint">ミッションができたら、こたえを書いて、担当の実行委員に合言葉を聞いて入力してね（' + n + '/3 クリア）</p>' +
           '<button class="btn big" data-act="openClear">合言葉を入力する</button>'
         : '<button class="btn big gold" data-act="cert">3つ達成！ 表彰状を見る →</button>');
   },
@@ -617,7 +617,7 @@ function renderPopup() {
         : '<h2 class="h2 center-t">CLEARはありませんでした</h2>') +
       (p.others.length
         ? '<ul class="others">' + p.others.map(o => '<li>' + esc(o.name) + ' さん：' +
-            (o.status === 'already' ? 'もうクリア済みです' : '3つクリアしてから、社長の認定をもらってね') + '</li>').join('') + '</ul>'
+            statusMsg(o) + '</li>').join('') + '</ul>'
         : '') +
       '<button class="btn' + (role === 'cert' && p.okCount ? ' gold' : '') + '" data-act="closeResult">' + (role === 'cert' && p.okCount ? '表彰状を見る' : 'OK') + '</button>';
   } else if (p.type === 'checkin') {
@@ -834,6 +834,27 @@ function onAnswerInput(el, field) {
   q.timer = setTimeout(() => flushAnswer(id, idx, f), 800);
   AQ.set(key, q);
 }
+/** スタンプの結果ごとの説明 */
+function statusMsg(o) {
+  if (o.status === 'already') return 'もうクリア済みです';
+  if (o.status === 'noanswer') return o.kid ? 'こたえを かいてから もういちど いれてね' : 'こたえを書いてから、もう一度合言葉を入れてね';
+  return '3つクリアしてから、社長の認定をもらってね';
+}
+/** 送信待ちのこたえ・聞いた人を、すぐに送り切る（合言葉の前に呼ぶ） */
+async function flushPending() {
+  for (let n = 0; n < 8; n++) {
+    const pend = Array.from(AQ.entries()).filter(([, q]) => q.dirty || q.sending);
+    if (!pend.length) return;
+    await Promise.all(pend.map(([key, q]) => {
+      clearTimeout(q.timer);
+      if (q.sending) return new Promise(r => setTimeout(r, 150));
+      const i = key.lastIndexOf(':');
+      const rest = key.slice(i + 1);
+      const w = rest.charAt(0) === 'w';
+      return flushAnswer(key.slice(0, i), Number(w ? rest.slice(1) : rest), w ? 'w' : 'a');
+    }));
+  }
+}
 async function flushAnswer(id, idx, field) {
   const f = field === 'w' ? 'w' : 'a';
   const key = id + ':' + (f === 'w' ? 'w' : '') + idx;
@@ -981,6 +1002,7 @@ const ACTIONS = {
   },
 
   async doClear() {
+    await flushPending(); // 書いたばかりのこたえを先に保存する（スタンプはこたえが必要）
     const passEl = document.getElementById('pass');
     const pass = passEl ? passEl.value : '';
     const n = Array.from(pass).length;
@@ -998,12 +1020,18 @@ const ACTIONS = {
       const results = Array.isArray(j.results) ? j.results : [];
       const ok = results.filter(r => r.status === 'ok');
       const role = (results[0] && results[0].role) || 'M1';
+      // こたえが空でスタンプが押せなかっただけのときは、合言葉の画面のまま案内する
+      if (results.length && results.every(r => r.status === 'noanswer')) {
+        const kid = results.length === 1 && isKid(findCard(results[0].id));
+        popupMsg(kid ? 'こたえを かいてから、もういちど あいことばを いれてね' : 'こたえを書いてから、もう一度合言葉を入れてね');
+        return;
+      }
       S.justCleared = {};
       ok.forEach(r => { S.justCleared[r.id + r.role] = true; });
       S.popup = {
         type: 'result', role: role, okCount: ok.length,
         okIds: ok.map(r => r.id), okNames: ok.map(r => nameOf(r.id)),
-        others: results.filter(r => r.status !== 'ok').map(r => ({ name: nameOf(r.id), status: r.status })),
+        others: results.filter(r => r.status !== 'ok').map(r => ({ name: nameOf(r.id), status: r.status, kid: isKid(findCard(r.id)) })),
       };
       render();
     });
