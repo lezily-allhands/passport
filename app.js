@@ -166,18 +166,28 @@ function face(st, size) {
   const cert = s.role === 'cert';
   const ring = safeColor(s.color, cert ? '#C99A2E' : '#E8892F');
   const photo = safePhoto(s.photo);
-  const edge = cert ? 'background:linear-gradient(135deg,#F7E7B8,#C99A2E 55%,#E9C766)' : 'background:' + ring;
+  const edge = cert ? 'background:linear-gradient(135deg,#7D5C18 0%,#E9CF7A 20%,#B8892E 38%,#FBEFB8 52%,#A87C2A 68%,#E8C870 84%,#6E4F12 100%)' : 'background:' + ring;
   const inner = photo
     ? '<img src="' + esc(photo) + '" alt="' + esc(s.name || '') + '">'
     : '<span class="face-ini" style="background:' + ring + ';font-size:' + Math.round(size * 0.42) + 'px">' + esc(firstChar(s.name)) + '</span>';
   return '<span class="face" style="width:' + size + 'px;height:' + size + 'px;' + edge + '">' + inner + '</span>';
 }
+/** 社長の認定シールの下の帯「社長 ○○」用（表示名の最後の「さん」などを除く） */
+function bareName(n) { return String(n || '').trim().replace(/(さん|くん|君|ちゃん|様|さま)$/, '') || '社長'; }
 function seal(role, size, pop, list) {
   const st = staffOf(role, list) || { role };
   const cert = role === 'cert';
   const c = safeColor(st.color, cert ? '#C99A2E' : '#E8892F');
-  return '<span class="seal' + (pop ? ' pop' : '') + (cert ? ' gold' : '') + '">' + face(st, size) +
-    '<span class="seal-label"' + (cert ? '' : ' style="background:' + c + '"') + '>' + (cert ? '社長認定' : 'CLEAR!') + '</span></span>';
+  const fs = Math.max(10, Math.round(size * 0.16)) + 'px';
+  if (cert) {
+    // 紙の認定シールと同じつくり：上に「認定」、下に「社長 ○○」（金色の帯）
+    const nm = bareName(st.name);
+    return '<span class="seal gold' + (pop ? ' pop' : '') + '" style="--fs:' + fs + '">' +
+      '<span class="seal-label seal-top">認定</span>' + face(st, size) +
+      '<span class="seal-label">' + (nm === '社長' ? '社長' : '社長 ' + esc(nm)) + '</span></span>';
+  }
+  return '<span class="seal' + (pop ? ' pop' : '') + '" style="--fs:' + fs + '">' + face(st, size) +
+    '<span class="seal-label" style="background:' + c + '">CLEAR!</span></span>';
 }
 function flower(size) {
   let p = '';
