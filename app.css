@@ -188,6 +188,16 @@ button, input, textarea { font: inherit; color: inherit; }
   margin: 0; padding: 8px 10px; border-radius: 10px; background: var(--paper);
   border: 1px dashed var(--line); white-space: pre-wrap; word-break: break-word;
 }
+.who-row { display: flex; align-items: center; gap: 8px; }
+.who-l {
+  flex: none; font-size: 12px; font-weight: 800; color: var(--sub); white-space: nowrap;
+}
+.who {
+  flex: 1; min-width: 0; padding: 6px 10px; border-radius: 10px;
+  border: 2px solid var(--line); background: var(--paper); font-size: 16px;
+}
+.who:focus { outline: none; border-color: var(--accent); }
+.who-view { margin: 0; display: flex; gap: 8px; align-items: baseline; word-break: break-word; }
 .m-slot { flex: none; width: 66px; display: flex; justify-content: center; padding-top: 4px; }
 
 /* 表彰状 */

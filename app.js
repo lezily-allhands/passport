@@ -118,6 +118,8 @@ function setData(d) {
     [1, 2, 3].forEach(i => {
       const q = AQ.get(c.id + ':' + i);
       if (q && q.dirty) c.answers[i - 1] = q.value;
+      const w = AQ.get(c.id + ':w' + i);
+      if (w && w.dirty) { if (!Array.isArray(c.whos)) c.whos = ['', '', '']; c.whos[i - 1] = w.value; }
     });
   });
   S.data = d;
@@ -481,6 +483,12 @@ function missionRows(c, staffList, editable) {
     const mc = safeColor(m.color, '#E8892F');
     const done = !!(c.clears || [])[i];
     const ans = (c.answers || [])[i] || '';
+    const who = (c.whos || [])[i] || '';
+    const whoHtml = editable
+      ? '<label class="who-row"><span class="who-l">' + (kid ? 'きいた人' : '聞いた人') + '</span>' +
+          '<input class="who" type="text" maxlength="20" autocomplete="off" data-card="' + esc(c.id) + '" data-idx="' + (i + 1) + '" placeholder="' +
+          (kid ? 'だれに きいた？' : '話を聞いた人の名前') + '" aria-label="MISSION ' + (i + 1) + ' で話を聞いた人" value="' + esc(who) + '"></label>'
+      : (who ? '<p class="who-view"><span class="who-l">' + (kid ? 'きいた人' : '聞いた人') + '</span>' + esc(who) + '</p>' : '');
     const answerHtml = editable
       ? '<textarea class="ans" rows="2" maxlength="200" data-card="' + esc(c.id) + '" data-idx="' + (i + 1) + '" placeholder="' +
           (kid ? 'こたえをかこう' : '聞いたことをメモ') + '" aria-label="MISSION ' + (i + 1) + ' のこたえ">' + esc(ans) + '</textarea>'
@@ -495,6 +503,7 @@ function missionRows(c, staffList, editable) {
           '<span class="tag" style="background:' + sc + '">' + (kid ? 'だれに' : '誰に') + '</span> ' + esc(m.who) + '<br>' +
           (m.label ? '<span class="tag" style="background:' + mc + '">' + esc(m.label) + '</span> ' : '') + esc(m.q) +
         '</p>' +
+        whoHtml +
         answerHtml +
       '</div>' +
       '<div class="m-slot">' + slot + '</div>' +
@@ -798,29 +807,35 @@ function logout() {
 /* ================================================================== */
 /* こたえの保存（同じ欄への送信は1件ずつ。最新の値だけを送る）               */
 /* ================================================================== */
-function onAnswerInput(el) {
+/* field：'a' はこたえ、'w' は聞いた人 */
+function onAnswerInput(el, field) {
+  const f = field === 'w' ? 'w' : 'a';
   const id = el.dataset.card;
   const idx = Number(el.dataset.idx);
   const value = el.value;
   const c = findCard(id);
-  if (c) c.answers[idx - 1] = value;
-  const key = id + ':' + idx;
+  if (c && f === 'a') c.answers[idx - 1] = value;
+  if (c && f === 'w') { if (!Array.isArray(c.whos)) c.whos = ['', '', '']; c.whos[idx - 1] = value; }
+  const key = id + ':' + (f === 'w' ? 'w' : '') + idx;
   const q = AQ.get(key) || { timer: 0, sending: false, dirty: false, value: '' };
   q.value = value;
   q.dirty = true;
   clearTimeout(q.timer);
-  q.timer = setTimeout(() => flushAnswer(id, idx), 800);
+  q.timer = setTimeout(() => flushAnswer(id, idx, f), 800);
   AQ.set(key, q);
 }
-async function flushAnswer(id, idx) {
-  const key = id + ':' + idx;
+async function flushAnswer(id, idx, field) {
+  const f = field === 'w' ? 'w' : 'a';
+  const key = id + ':' + (f === 'w' ? 'w' : '') + idx;
   const q = AQ.get(key);
   if (!q || q.sending || !q.dirty) return;
   q.sending = true;
   const v = q.value;
   let ok = false;
   try {
-    const j = S.pkey ? await api('pAnswer', [S.pkey, idx, v]) : await api('saveAnswer', [id, idx, v]);
+    const j = f === 'w'
+      ? (S.pkey ? await api('pWho', [S.pkey, idx, v]) : await api('saveWho', [id, idx, v]))
+      : (S.pkey ? await api('pAnswer', [S.pkey, idx, v]) : await api('saveAnswer', [id, idx, v]));
     if (j && j.ok) ok = true;
     else if (j && j.error) toast(msgOf(j.error));
   } catch (e) {
@@ -829,7 +844,7 @@ async function flushAnswer(id, idx) {
   } finally {
     q.sending = false;
   }
-  if (q.value !== v) { flushAnswer(id, idx); return; } // 送信中に入力が続いた → 最新の値を1回だけ送る
+  if (q.value !== v) { flushAnswer(id, idx, f); return; } // 送信中に入力が続いた → 最新の値を1回だけ送る
   if (ok) { q.dirty = false; AQ.delete(key); }
 }
 
@@ -999,7 +1014,8 @@ function onClick(ev) {
 }
 function onInput(ev) {
   const el = ev.target;
-  if (el && el.classList && el.classList.contains('ans')) onAnswerInput(el);
+  if (el && el.classList && el.classList.contains('ans')) onAnswerInput(el, 'a');
+  else if (el && el.classList && el.classList.contains('who')) onAnswerInput(el, 'w');
 }
 function onKey(ev) {
   if (ev.key !== 'Enter' || ev.isComposing) return;
