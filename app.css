@@ -92,28 +92,39 @@ button, input, textarea { font: inherit; color: inherit; }
 
 /* ログイン */
 .login { display: flex; flex-direction: column; gap: 16px; padding-top: 10px; }
-.crowd { width: 100%; height: auto; }
-.crowd .c1 { fill: var(--accent); } .crowd .c1s { stroke: var(--accent); }
-.crowd .c2 { fill: var(--ok); }     .crowd .c2s { stroke: var(--ok); }
-.crowd .c3 { fill: var(--gold); }   .crowd .c3s { stroke: var(--gold); }
-.crowd .c4 { fill: var(--warn); }   .crowd .c4s { stroke: var(--warn); }
-.crowd .arm { stroke-width: 9; stroke-linecap: round; fill: none; }
-.crowd .skin { fill: #F6D3B6; }
-.crowd .h1 { fill: #3B2A20; } .crowd .h2 { fill: #7A4A2A; }
-.crowd .eye { fill: #2E2A26; }
-.crowd .smile { fill: none; stroke: #2E2A26; stroke-width: 2; stroke-linecap: round; }
+/* ログインの表紙：パスポート手帳 */
+/* 画面の高さの約2/3（横は画面の幅まで） */
+.pp-book { position: relative; width: min(100%, 340px); width: min(100%, 360px, calc(66svh * 5 / 8)); aspect-ratio: 5 / 8; margin: 4px auto 6px; container-type: inline-size; }
+.pp-page {
+  position: absolute; inset: 0; border-radius: 14px 20px 20px 14px; background: var(--paper); border: 2px solid var(--line);
+  display: grid; place-items: center; font-family: var(--f-head); font-size: 30px; color: var(--accent);
+}
+.pp-page span { opacity: 0; transition: opacity .4s .35s; }
+.pp-book.opening .pp-page span { opacity: 1; }
+.login:has(.pp-book.opening) > :not(.pp-book) { opacity: 0; transition: opacity .3s; }
+.pp-cover {
+  position: absolute; inset: 0; transform-origin: left center; backface-visibility: hidden;
+  border-radius: 14px 20px 20px 14px; background: linear-gradient(160deg, #F5A33A, #E07F1C); color: #fff;
+  box-shadow: inset 10px 0 0 rgba(0,0,0,.08), 0 10px 24px rgba(160,90,10,.28);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: clamp(10px, 4cqw, 16px); text-align: center;
+}
+.pp-cover::before {
+  content: ""; position: absolute; inset: 12px 12px 12px 20px; pointer-events: none;
+  border: 2px solid rgba(255,236,190,.85); border-radius: 10px; outline: 1px solid rgba(255,236,190,.5); outline-offset: 4px;
+}
+.pp-logo { position: relative; background: #fff; border-radius: 50%; width: 140px; width: clamp(110px, 46cqw, 170px); aspect-ratio: 1; display: grid; place-items: center; box-shadow: 0 0 0 4px rgba(255,236,190,.9); }
+.pp-logo img { display: block; width: 84px; width: clamp(64px, 27cqw, 100px); height: auto; }
+.pp-en { position: relative; font-weight: 800; font-size: clamp(12px, 4.4cqw, 16px); letter-spacing: .5em; text-indent: .5em; color: #FFE8B8; margin-top: 8px; }
+.pp-title { position: relative; margin: 0; font-family: var(--f-head); font-weight: 400; font-size: 40px; font-size: clamp(32px, 12.5cqw, 46px); line-height: 1.25; text-shadow: 0 3px 0 rgba(150,80,0,.25); }
+.pp-title span { display: block; font-size: 28px; font-size: clamp(22px, 8.5cqw, 31px); letter-spacing: .2em; text-indent: .2em; color: #FFF3D6; }
+.pp-stars { position: relative; color: #FFE8B8; font-size: clamp(13px, 4.6cqw, 18px); letter-spacing: .6em; text-indent: .6em; }
 .gsi { display: flex; justify-content: center; min-height: 44px; }
 
 /* ホーム */
-.hello { display: flex; align-items: center; gap: 12px; }
-.hello { padding: 6px 2px 4px; gap: 14px; }
-.hello-t { font-family: var(--f-head); font-size: 26px; line-height: 1.3; }
-.hello .sub { font-size: 14px; margin-top: 2px; }
+.hello { text-align: center; padding: 10px 4px 0; }
+.hello-t { font-family: var(--f-head); font-size: 26px; line-height: 1.35; }
+.hello .sub { font-size: 13px; margin-top: 4px; }
 .hello-t .nb { display: inline-block; }
-.avatar {
-  flex: none; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--accent-soft); color: var(--accent); font-family: var(--f-head); font-size: 30px;
-}
 .event .btn.big { margin-top: 14px; }
 .attend { display: flex; align-items: center; gap: 10px; margin-top: 14px; font-weight: 800; }
 .stamp.big span { font-size: 18px; }
@@ -233,8 +244,8 @@ button, input, textarea { font: inherit; color: inherit; }
 .rec-theme { font-weight: 800; }
 .rec-st { flex: none; width: 64px; display: flex; justify-content: center; text-align: center; }
 .stamp { display: flex; flex-direction: column; align-items: center; font-size: 12px; font-weight: 800; color: var(--accent); }
-.flower .petal { fill: var(--accent); }
-.flower .pistil { fill: var(--paper); }
+.join-stamp { display: block; }
+.home-art { display: block; width: 100%; height: auto; border-radius: 18px; margin: 14px 0 16px; }
 .st-no { font-size: 13px; color: var(--sub); }
 .st-cur { font-size: 13px; font-weight: 800; color: var(--accent); border: 2px dashed var(--accent); border-radius: 999px; padding: 2px 10px; }
 .photo { margin-top: 4px; }

@@ -190,29 +190,8 @@ function seal(role, size, pop, list) {
   return '<span class="seal' + (pop ? ' pop' : '') + '" style="--fs:' + fs + '">' + face(st, size) +
     '<span class="seal-label" style="background:' + c + '">CLEAR!</span></span>';
 }
-function flower(size) {
-  let p = '';
-  for (let i = 0; i < 5; i++) {
-    const a = (i * 72 - 90) * Math.PI / 180;
-    p += '<circle cx="' + (50 + Math.cos(a) * 22).toFixed(1) + '" cy="' + (50 + Math.sin(a) * 22).toFixed(1) + '" r="19"/>';
-  }
-  return '<svg class="flower" width="' + size + '" height="' + size + '" viewBox="0 0 100 100" aria-hidden="true"><g class="petal">' + p +
-    '</g><circle cx="50" cy="50" r="13" class="pistil"/></svg>';
-}
-function crowd() {
-  const person = (x, cls, hairCls, armUp) =>
-    '<g transform="translate(' + x + ' 0)">' +
-      '<path d="M-22 120 Q-22 78 0 78 Q22 78 22 120 Z" class="' + cls + '"/>' +
-      (armUp === 'both' || armUp === 'l' ? '<path d="M-14 86 L-30 48" class="arm ' + cls + 's"/>' : '<path d="M-16 88 L-26 112" class="arm ' + cls + 's"/>') +
-      (armUp === 'both' || armUp === 'r' ? '<path d="M14 86 L30 48" class="arm ' + cls + 's"/>' : '<path d="M16 88 L26 112" class="arm ' + cls + 's"/>') +
-      '<circle cx="0" cy="58" r="17" class="skin"/>' +
-      '<path d="M-17 56 Q-17 38 0 38 Q17 38 17 56 Q10 48 0 48 Q-10 48 -17 56 Z" class="' + hairCls + '"/>' +
-      '<circle cx="-6" cy="60" r="2" class="eye"/><circle cx="6" cy="60" r="2" class="eye"/>' +
-      '<path d="M-5 66 Q0 70 5 66" class="smile"/>' +
-    '</g>';
-  return '<svg class="crowd" viewBox="0 0 300 124" role="img" aria-label="手を挙げてよろこぶ4人のイラスト">' +
-    person(48, 'c1', 'h1', 'both') + person(118, 'c2', 'h2', 'r') + person(184, 'c3', 'h1', 'both') + person(252, 'c4', 'h2', 'l') +
-    '</svg>';
+function joinStamp(size) {
+  return '<img class="join-stamp" src="stamp_join.png" width="' + size + '" height="' + size + '" alt="参加">';
 }
 function dotted(text, big) {
   return '<span class="slot' + (big ? ' big' : '') + '"><span>' + text + '</span></span>';
@@ -255,9 +234,18 @@ const SCREENS = {
 
   login() {
     return '<div class="login">' +
-      '<h1 class="title">全員集合会パスポート</h1>' +
-      crowd() +
-      '<p class="lead">Lezilyのメンバーは、Googleアカウントでログインしてください。ご家族の分のミッションカードは、ログイン後に追加できます</p>' +
+      // 表紙：パスポート手帳の形（ロゴは白い窓の上に置く。ダークモードでも読めるように）
+      // ログインすると、表紙が左にひらいて中のページが見えてからホームへ（openCover）
+      '<div class="pp-book">' +
+        '<div class="pp-page" aria-hidden="true"><span>ようこそ！</span></div>' +
+        '<div class="pp-cover">' +
+          '<div class="pp-logo"><img src="logo_lezily.png" width="78" height="81" alt="Lezily レジリー"></div>' +
+          '<div class="pp-en" aria-hidden="true">PASSPORT</div>' +
+          '<h1 class="pp-title">全員集合会<span>パスポート</span></h1>' +
+          '<div class="pp-stars" aria-hidden="true">★ ★ ★</div>' +
+        '</div>' +
+      '</div>' +
+      '<p class="lead">Lezilyのメンバーは、Googleアカウントでログインしてください</p>' +
       '<div id="gsi" class="gsi"></div>' +
       '<p id="loginMsg" class="msg" role="status"></p>' +
       '<button class="btn ghost hidden" id="loginRetry" data-act="loginRetry">もう一度ためす</button>' +
@@ -280,16 +268,17 @@ const SCREENS = {
     const hello = me.nick || (me.name + ' さん');
     const sum = recordSummary();
     const attend = ev.attended
-      ? '<div class="attend"><span class="stamp">' + flower(40) + '<span>参加</span></span><span>参加の記録がつきました</span></div>' +
+      ? '<div class="attend"><span class="stamp">' + joinStamp(56) + '</span><span>参加の記録がつきました</span></div>' +
         '<button class="link-btn" data-act="openRound" data-no="' + esc(ev.no) + '">第' + esc(ev.no) + '回のページを見る →</button>'
       : ev.checkinOpen
         ? '<button class="btn big" data-act="openCheckin">参加の合言葉を入れる</button>'
         : '';
     return '' +
       '<header class="hello">' +
-        '<div class="avatar" aria-hidden="true">' + esc(firstChar(me.nick || me.name)) + '</div>' +
-        '<div><div class="hello-t"><span class="nb">' + esc(hello) + '、</span><span class="nb">ようこそ！</span></div><div class="sub">' + esc(me.name) + '</div></div>' +
+        '<div class="hello-t"><span class="nb">' + esc(hello) + '、</span><span class="nb">ようこそ！</span></div>' +
+        '<div class="sub">' + esc(me.name) + '</div>' +
       '</header>' +
+      (safePhoto(d.homeArt) ? '<img class="home-art" src="' + esc(safePhoto(d.homeArt)) + '" alt="みんなでばんざいしているイラスト">' : '') +
 
       '<section class="box event">' +
         '<div class="kicker">第' + esc(ev.no) + '回 全員集合会</div>' +
@@ -565,7 +554,7 @@ function certHtml(c, selfName, ev, texts, staffList, pop) {
 
 function roundStatus(h, isCur) {
   return h.attended
-    ? '<span class="stamp">' + flower(46) + '<span>参加</span></span>'
+    ? '<span class="stamp">' + joinStamp(56) + '</span>'
     : isCur ? '<span class="st-cur">今回</span>' : '<span class="st-no">不参加</span>';
 }
 /** 写真フォルダへのリンク。注意書き（文面シートの photo_note）があれば、先に確認を出す */
@@ -638,7 +627,7 @@ function renderPopup() {
       '<button class="btn" data-act="doCheckin">参加する</button>' +
       '<button class="btn ghost" data-act="closePopup">とじる</button>';
   } else if (p.type === 'checked') {
-    inner = '<div class="celebrate"><span class="stamp big">' + flower(96) + '<span>参加</span></span></div>' +
+    inner = '<div class="celebrate"><span class="stamp big">' + joinStamp(140) + '</span></div>' +
       '<h2 class="h2 center-t">' + (p.already ? 'もう参加の記録がついています' : '参加の記録がつきました！') + '</h2>' +
       '<p class="center-t">第' + esc(S.data.event.no) + '回 全員集合会へようこそ</p>' +
       (S.data.event.cards ? '<p class="center-t">ミッションカードが開きました！</p>' : '') +
@@ -795,6 +784,7 @@ async function onCredential(resp) {
     S.sid = j.sid;
     store.set('zp_sid', j.sid);
     setData(j.data);
+    await openCover();
     goHome(true);
     return;
   }
@@ -805,6 +795,19 @@ async function onCredential(resp) {
   }
   // denied 以外は、必ず nonce を取り直してボタンを作り直す
   prepareLogin(!j ? MSG.net : j.error === 'retry' ? MSG.retry : msgOf(j.error));
+}
+/** ログインできたら、パスポートの表紙をひらく（動きを減らす設定のときは、すぐ進む） */
+function openCover() {
+  const book = document.querySelector('.pp-book');
+  const cover = book && book.querySelector('.pp-cover');
+  let reduce = false;
+  try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { /* なし */ }
+  if (!cover || reduce || typeof cover.animate !== 'function') return Promise.resolve();
+  book.classList.add('opening');
+  const anim = cover.animate(
+    [{ transform: 'perspective(1000px) rotateY(0deg)' }, { transform: 'perspective(1000px) rotateY(-80deg)', opacity: 1, offset: .75 }, { transform: 'perspective(1000px) rotateY(-100deg)', opacity: 0 }],
+    { duration: 800, easing: 'cubic-bezier(.55,0,.3,1)', fill: 'forwards' });
+  return anim.finished.then(() => new Promise(r => setTimeout(r, 450))).catch(() => {});
 }
 function toLogin() {
   S.sid = '';
