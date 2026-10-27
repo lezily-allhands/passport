@@ -31,6 +31,7 @@ const MSG = {
   notfound: 'カードが見つかりません',
   wrongcode: '合言葉がちがいます。もう一度たしかめてね',
   notopen: 'いまは合言葉を受け付けていません',
+  needcheckin: '受付で参加の合言葉を入れると、ミッションカードが開きます',
   busy: '少し待ってから、もう一度ためしてね',
   retry: 'もう一度ログインしてください',
   net: '通信できませんでした。電波のよいところで、もう一度ためしてね',
@@ -279,7 +280,8 @@ const SCREENS = {
     const hello = me.nick || (me.name + ' さん');
     const sum = recordSummary();
     const attend = ev.attended
-      ? '<div class="attend"><span class="stamp">' + flower(40) + '<span>参加</span></span><span>参加の記録がつきました</span></div>'
+      ? '<div class="attend"><span class="stamp">' + flower(40) + '<span>参加</span></span><span>参加の記録がつきました</span></div>' +
+        '<button class="link-btn" data-act="openRound" data-no="' + esc(ev.no) + '">第' + esc(ev.no) + '回のページを見る →</button>'
       : ev.checkinOpen
         ? '<button class="btn big" data-act="openCheckin">参加の合言葉を入れる</button>'
         : '';
@@ -299,7 +301,12 @@ const SCREENS = {
         (ev.place ? '<button class="link-btn" data-act="place">場所を見る →</button>' : '') +
         extLink(ev.detailUrl, '当日の詳しいご案内を見る', 'link block') +
         attend +
-        (ev.cards ? '<button class="btn big" data-act="openCard">第' + esc(ev.no) + '回 ミッションカードを開く</button>' : '') +
+        // ミッションカードは、参加の合言葉を入れてから開く（10/26）
+        (ev.cards
+          ? (ev.attended
+            ? '<button class="btn big" data-act="openCard">第' + esc(ev.no) + '回 ミッションカードを開く</button>'
+            : '<p class="hint">' + (ev.checkinOpen ? '参加の合言葉を入れると、第' + esc(ev.no) + '回のミッションカードが開きます' : '第' + esc(ev.no) + '回のミッションカードは、当日 受付で参加の合言葉を入れると開きます') + '</p>')
+          : '') +
       '</section>' +
 
       '<section class="box">' +
@@ -422,7 +429,10 @@ const SCREENS = {
     const time = span + (h.gather ? (span ? '（集合 ' + esc(h.gather) + '）' : '集合 ' + esc(h.gather)) : '');
     const nCards = Number(h.cards) || 0;
     const cardBtn = isCur
-      ? (d.event.cards ? '<button class="btn" data-act="openCard">ミッションカードを開く</button>' : '')
+      ? (!d.event.cards ? ''
+        : d.event.attended ? '<button class="btn" data-act="openCard">ミッションカードを開く</button>'
+        : d.event.checkinOpen ? '<p class="hint">参加の合言葉を入れると、ミッションカードが開きます</p><button class="btn" data-act="openCheckin">参加の合言葉を入れる</button>'
+        : '<p class="hint">当日 受付で参加の合言葉を入れると、ミッションカードが開きます</p>')
       : nCards > 0
         ? '<button class="btn" data-act="openPast" data-no="' + esc(h.no) + '">ミッションカードを見る（' + nCards + '枚）</button>'
         : '';
@@ -631,6 +641,7 @@ function renderPopup() {
     inner = '<div class="celebrate"><span class="stamp big">' + flower(96) + '<span>参加</span></span></div>' +
       '<h2 class="h2 center-t">' + (p.already ? 'もう参加の記録がついています' : '参加の記録がつきました！') + '</h2>' +
       '<p class="center-t">第' + esc(S.data.event.no) + '回 全員集合会へようこそ</p>' +
+      (S.data.event.cards ? '<p class="center-t">ミッションカードが開きました！</p>' : '') +
       '<button class="btn" data-act="closePopup">OK</button>';
   } else if (p.type === 'photo') {
     inner = '<h2 class="h2">写真・動画を見る前に</h2>' +
@@ -784,7 +795,7 @@ async function onCredential(resp) {
     S.sid = j.sid;
     store.set('zp_sid', j.sid);
     setData(j.data);
-    go('home');
+    goHome(true);
     return;
   }
   if (j && j.error === 'denied') {
@@ -893,6 +904,7 @@ const ACTIONS = {
   roundBack() { go(S.roundNo ? 'round' : 'record'); },
   openCard() {
     if (!(S.data && S.data.event && S.data.event.cards)) { go('home'); return; }
+    if (!S.pkey && !S.data.event.attended) { go('home'); toast(MSG.needcheckin); return; }
     if (S.screen === 'home') { const s = selfCard(); if (s) setCur(s.id); }
     go('card');
   },
@@ -956,7 +968,10 @@ const ACTIONS = {
       const j = await api('checkin', [pass]);
       if (j && j.error) { popupMsg(msgOf(j.error)); return; }
       setData(j.data);
-      S.screen = 'home';
+      // 参加の合言葉が通ったら、今回の回のページを開く（ミッションカードもそこから開ける）
+      S.roundNo = S.data.event.no;
+      S.screen = 'round';
+      window.scrollTo(0, 0);
       openPopup({ type: 'checked', already: !!j.already });
     });
   },
@@ -1085,7 +1100,16 @@ async function boot() {
     S.bootError = true; render(); toast(msgOf(j && j.error)); return;
   }
   setData(j);
+  goHome(true);
+}
+/** ホームへ。受付時間中でまだ参加していなければ、参加の合言葉の画面を自動で開く（タブで1回だけ。10/26） */
+function goHome(ask) {
   go('home');
+  const ev = S.data && S.data.event;
+  if (ask && ev && ev.checkinOpen && !ev.attended && !store.get('zp_ask')) {
+    store.set('zp_ask', '1');
+    openPopup({ type: 'checkin' });
+  }
 }
 
 /* パートナー用QR（#p=キー）で開いたとき：ログインなしで、そのカード1枚だけ */
