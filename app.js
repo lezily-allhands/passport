@@ -274,9 +274,9 @@ const SCREENS = {
         ? '<button class="btn big" data-act="openCheckin">参加の合言葉を入れる</button>'
         : '';
     return '' +
-      '<header class="hello">' +
+      '<header class="hello' + (safePhoto(d.homeArt) ? ' over-art' : '') + '">' +
+        // 絵の人たちが言っている吹き出し（本名は出さない）
         '<div class="hello-t"><span class="nb">' + esc(hello) + '、</span><span class="nb">ようこそ！</span></div>' +
-        '<div class="sub">' + esc(me.name) + '</div>' +
       '</header>' +
       (safePhoto(d.homeArt) ? '<img class="home-art" src="' + esc(safePhoto(d.homeArt)) + '" alt="みんなでばんざいしているイラスト">' : '') +
 

@@ -121,9 +121,19 @@ button, input, textarea { font: inherit; color: inherit; }
 .gsi { display: flex; justify-content: center; min-height: 44px; }
 
 /* ホーム */
-.hello { text-align: center; padding: 10px 4px 0; }
-.hello-t { font-family: var(--f-head); font-size: 26px; line-height: 1.35; }
-.hello .sub { font-size: 13px; margin-top: 4px; }
+/* 吹き出しは絵の上の部分に重ねる（絵の人たちが言っている形） */
+.hello { position: relative; z-index: 1; text-align: center; padding: 10px 0 16px; }
+.hello.over-art { padding-bottom: 0; margin-bottom: -46px; }
+.hello-t {
+  position: relative; display: inline-block; max-width: 100%; box-sizing: border-box;
+  font-family: var(--f-head); font-size: 26px; font-size: clamp(22px, 7vw, 30px); line-height: 1.35; color: var(--ink);
+  background: var(--card); border: 3px solid var(--accent); border-radius: 28px; padding: 12px 22px;
+  box-shadow: 0 5px 0 var(--accent-soft);
+}
+/* しっぽ（下の絵の人たちに向ける） */
+.hello-t::before, .hello-t::after { content: ""; position: absolute; left: 50%; border-style: solid; border-color: transparent; }
+.hello-t::before { bottom: -19px; margin-left: -14px; border-width: 18px 14px 0; border-top-color: var(--accent); }
+.hello-t::after { bottom: -13px; margin-left: -10px; border-width: 13px 10px 0; border-top-color: var(--card); }
 .hello-t .nb { display: inline-block; }
 .event .btn.big { margin-top: 14px; }
 .attend { display: flex; align-items: center; gap: 10px; margin-top: 14px; font-weight: 800; }
@@ -245,7 +255,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .rec-st { flex: none; width: 64px; display: flex; justify-content: center; text-align: center; }
 .stamp { display: flex; flex-direction: column; align-items: center; font-size: 12px; font-weight: 800; color: var(--accent); }
 .join-stamp { display: block; }
-.home-art { display: block; width: 100%; height: auto; border-radius: 18px; margin: 14px 0 16px; }
+.home-art { display: block; width: 100%; height: auto; border-radius: 18px; margin: 0 0 16px; }
 .st-no { font-size: 13px; color: var(--sub); }
 .st-cur { font-size: 13px; font-weight: 800; color: var(--accent); border: 2px dashed var(--accent); border-radius: 999px; padding: 2px 10px; }
 .photo { margin-top: 4px; }
