@@ -12,7 +12,7 @@ const CONFIG = {
 /* ================================================================== */
 /* 状態・保存                                                          */
 /* ================================================================== */
-const S = { sid: '', data: null, cur: '', screen: 'boot', popup: null, busy: false, deniedEmail: '', bootError: false, past: null, roundNo: 0, pkey: '' };
+const S = { sid: '', data: null, cur: '', screen: 'boot', popup: null, busy: false, deniedEmail: '', bootError: false, past: null, roundNo: 0, roundFrom: 'record', pkey: '' };
 const PAST = new Map(); // 過去の年の応答（メモリだけ。保存しない）
 
 const store = {
@@ -134,6 +134,8 @@ function setCur(id) { S.cur = id || ''; store.set('zp_cur', S.cur); }
 function clearCount(c) { return (c.clears || []).filter(Boolean).length; }
 function isKid(c) { return !!c && c.kind === 'kid'; }
 function staffOf(role, list) { return (list || (S.data && S.data.staff) || []).find(s => s.role === role) || null; }
+/** ミッションの担当3人の名前（「はぱさん・よしちゃん・けんさん」） */
+function missionStaffNames(list) { return ['M1', 'M2', 'M3'].map(r => staffName(r, list)).join('・'); }
 function staffName(role, list) { const s = staffOf(role, list); return s && s.name ? s.name : (role === 'cert' ? '社長' : '実行委員'); }
 function missionsFor(c) { return (c && Array.isArray(c.missions)) ? c.missions : []; }
 function cardLabel(c) { return c.name || ''; }
@@ -269,7 +271,7 @@ const SCREENS = {
     const sum = recordSummary();
     const attend = ev.attended
       ? '<div class="attend"><span class="stamp">' + joinStamp(56) + '</span><span>参加の記録がつきました</span></div>' +
-        '<button class="link-btn" data-act="openRound" data-no="' + esc(ev.no) + '">第' + esc(ev.no) + '回のページを見る →</button>'
+        '<button class="link-btn" data-act="openRound" data-from="home" data-no="' + esc(ev.no) + '">第' + esc(ev.no) + '回のページを見る →</button>'
       : ev.checkinOpen
         ? '<button class="btn big" data-act="openCheckin">参加の合言葉を入れる</button>'
         : '';
@@ -287,7 +289,8 @@ const SCREENS = {
           (ev.date ? '<div><dt>日にち</dt><dd>' + fmtDate(ev.date, true) + '</dd></div>' : '') +
           (ev.gather ? '<div><dt>集合</dt><dd>' + esc(ev.gather) + '</dd></div>' : '') +
         '</dl>' +
-        (ev.place ? '<button class="link-btn" data-act="place">場所を見る →</button>' : '') +
+        // 場所はホームには出さない回もある（設定 HOME_PLACE）。回のページにはいつも出る
+        (ev.place && ev.homePlace ? '<button class="link-btn" data-act="place">場所を見る →</button>' : '') +
         extLink(ev.detailUrl, '当日の詳しいご案内を見る', 'link block') +
         attend +
         // ミッションカードは、参加の合言葉を入れてから開く（10/26）
@@ -300,7 +303,7 @@ const SCREENS = {
 
       '<section class="box">' +
         '<h2 class="h2">参加記録</h2>' + summaryHtml(sum) +
-        '<button class="link-btn" data-act="record">スタンプを見る →</button>' +
+        '<button class="link-btn" data-act="record">参加記録を見る →</button>' +
       '</section>' +
 
       '';
@@ -342,8 +345,7 @@ const SCREENS = {
         '<p class="lead">3つクリアしたら表彰状がひらきます</p>' +
         missionHtml +
         (n < 3
-          ? '<p class="hint">ミッションができたら、こたえを書いて、担当の実行委員に合言葉を聞いて入力してね（' + n + '/3 クリア）</p>' +
-            '<button class="btn big" data-act="openClear">合言葉を入力する</button>'
+          ? '<p class="hint">' + 'こたえを書いたら、' + esc(missionStaffNames()) + 'のだれかに合言葉を聞いて、そのミッションの欄に入れてね（同じ人は1回まで）' + '（' + n + '/3 クリア）</p>'
           : '<button class="btn big gold" data-act="cert">3つ達成！ 表彰状を見る →</button>') +
         '<p class="note center-t">このカードは今日の23:59まで使えます</p>';
     }
@@ -361,8 +363,7 @@ const SCREENS = {
       '<p class="lead">' + (kid ? '3つ クリアしたら ひょうしょうじょうが ひらくよ' : '3つクリアしたら表彰状がひらきます') + '</p>' +
       missionHtml +
       (n < 3
-        ? '<p class="hint">ミッションができたら、こたえを書いて、担当の実行委員に合言葉を聞いて入力してね（' + n + '/3 クリア）</p>' +
-          '<button class="btn big" data-act="openClear">合言葉を入力する</button>'
+        ? '<p class="hint">' + (kid ? 'こたえを かいたら、ちかくの おとなに おしえてね' : 'こたえを書いたら、' + esc(missionStaffNames()) + 'のだれかに合言葉を聞いて、そのミッションの欄に入れてね（同じ人は1回まで）') + '（' + n + '/3 クリア）</p>'
         : '<button class="btn big gold" data-act="cert">3つ達成！ 表彰状を見る →</button>');
   },
 
@@ -428,7 +429,13 @@ const SCREENS = {
     const photo = safeUrl(h.photoUrl)
       ? photoLink(h.photoUrl, true) + '<p class="note">Googleドライブで開きます。Lezilyのアカウントで開いてください</p>'
       : '<p class="sub">写真はまだありません</p>';
-    return '<div class="topbar"><button class="back" data-act="record">← 参加記録</button></div>' +
+    // 戻るは、来たところへ（ホームから来たらホーム、参加記録から来たら参加記録）
+    const back = S.roundFrom === 'home'
+      ? '<button class="back" data-act="home">← ホーム</button>'
+      : '<button class="back" data-act="record">← 参加記録</button>';
+    const photoBox = '<section class="box"><h2 class="h2">写真・動画</h2>' + photo + '</section>';
+    const cardBox = cardBtn ? '<section class="box"><h2 class="h2">ミッションカード</h2>' + cardBtn + '</section>' : '';
+    return '<div class="topbar">' + back + '</div>' +
       '<section class="box round-head">' +
         '<div class="rec-main">' +
           '<div class="kicker">第' + esc(h.no) + '回 全員集合会</div>' +
@@ -438,10 +445,8 @@ const SCREENS = {
         '</div>' +
         '<div class="rec-st">' + roundStatus(h, isCur) + '</div>' +
       '</section>' +
-      '<section class="box">' +
-        '<h2 class="h2">写真・動画</h2>' + photo +
-      '</section>' +
-      (cardBtn ? '<section class="box"><h2 class="h2">ミッションカード</h2>' + cardBtn + '</section>' : '');
+      // 今回の回はミッションカードが上（当日よく使う）。過去の回は写真が上
+      (isCur ? cardBox + photoBox : photoBox + cardBox);
   },
 
   /* 4-12：過去の年（見るだけ） */
@@ -502,9 +507,11 @@ function missionRows(c, staffList, editable) {
       ? '<textarea class="ans" rows="2" maxlength="200" data-card="' + esc(c.id) + '" data-idx="' + (i + 1) + '" placeholder="' +
           (kid ? 'こたえをかこう' : '聞いたことをメモ') + '" aria-label="MISSION ' + (i + 1) + ' のこたえ">' + esc(ans) + '</textarea>'
       : (ans ? '<p class="ans-view">' + esc(ans) + '</p>' : '');
+    // 11/2：どのミッションも M1〜M3 のだれでもCLEARできる。シールはCLEARした人の顔
+    const by = (c.clearBy || [])[i] || role;
     const slot = done
-      ? seal(role, 62, editable && S.justCleared && S.justCleared[c.id + role], staffList)
-      : editable ? dotted(esc(staffName(role, staffList)) + 'の<br>CLEAR') : dotted('');
+      ? seal(by, 62, editable && S.justCleared && S.justCleared[c.id + role], staffList)
+      : editable ? dotted('CLEAR') : dotted('');
     return '<div class="mission' + (done ? ' done' : '') + '">' +
       '<div class="m-main">' +
         '<div class="m-no" style="color:' + sc + '">MISSION ' + (i + 1) + '</div>' +
@@ -514,6 +521,10 @@ function missionRows(c, staffList, editable) {
         '</p>' +
         whoHtml +
         answerHtml +
+        // ミッションごとに合言葉を入れる（11/2：下の1か所だけだと分かりにくい）
+        (editable && !done
+          ? '<button class="m-pass" data-act="openClear" data-idx="' + (i + 1) + '">' + (kid ? 'あいことばを いれる' : '合言葉を入れる') + '</button>'
+          : '') +
       '</div>' +
       '<div class="m-slot">' + slot + '</div>' +
     '</div>';
@@ -594,8 +605,12 @@ function renderPopup() {
   if (p.type === 'clear') {
     const list = cards();
     const c = curCard();
-    inner = '<h2 class="h2">合言葉を入力</h2>' +
-      '<p>実行委員に教えてもらった合言葉を入れてね</p>' +
+    const kidC = c && isKid(c);
+    inner = (p.idx
+      ? '<h2 class="h2">MISSION ' + p.idx + ' の' + (kidC ? 'あいことば' : '合言葉') + '</h2>' +
+        '<p>' + esc(missionStaffNames()) + (kidC ? 'の だれかに おしえてもらった あいことばを いれてね' : 'のだれかに教えてもらった合言葉を入れてね（同じ人は1回まで）') + '</p>'
+      : '<h2 class="h2">合言葉を入力</h2>' +
+        '<p>実行委員に教えてもらった合言葉を入れてね</p>') +
       '<input id="pass" class="input" type="text" maxlength="50" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-autofocus aria-label="合言葉">' +
       (list.length > 1
         ? '<fieldset class="pick"><legend>CLEARするカード</legend>' + list.map(x =>
@@ -851,6 +866,7 @@ function onAnswerInput(el, field) {
 /** スタンプの結果ごとの説明 */
 function statusMsg(o) {
   if (o.status === 'already') return 'もうクリア済みです';
+  if (o.status === 'samestaff') return o.kid ? 'この ひとの シールは もう もらっているよ' : 'この人のシールはもうもらっています';
   if (o.status === 'noanswer') return o.kid ? 'こたえを かいてから もういちど いれてね' : 'こたえを書いてから、もう一度合言葉を入れてね';
   return '3つクリアしてから、社長の認定をもらってね';
 }
@@ -903,7 +919,7 @@ const ACTIONS = {
   home() { go('home'); },
   place() { go('place'); },
   record() { go('record'); },
-  openRound(el) { const no = Number(el.dataset.no); if (isFinite(no) && no > 0) { S.roundNo = no; go('round'); } },
+  openRound(el) { const no = Number(el.dataset.no); if (isFinite(no) && no > 0) { S.roundNo = no; S.roundFrom = el.dataset.from === 'home' ? 'home' : 'record'; go('round'); } },
   roundBack() { go(S.roundNo ? 'round' : 'record'); },
   openCard() {
     if (!(S.data && S.data.event && S.data.event.cards)) { go('home'); return; }
@@ -938,7 +954,7 @@ const ACTIONS = {
   },
   addCard() { openPopup({ type: 'addCard' }); },
   askDelete() { const c = curCard(); if (c && c.kind !== 'self') openPopup({ type: 'delete', id: c.id }); },
-  openClear() { openPopup({ type: 'clear' }); },
+  openClear(el) { const n = Number(el && el.dataset.idx); openPopup({ type: 'clear', idx: n >= 1 && n <= 3 ? n : 0 }); },
   openShare() { const c = curCard(); if (c && c.kind === 'adult') openPopup({ type: 'share', id: c.id }); },
   async doShare() {
     const id = S.popup && S.popup.id;
@@ -973,6 +989,7 @@ const ACTIONS = {
       setData(j.data);
       // 参加の合言葉が通ったら、今回の回のページを開く（ミッションカードもそこから開ける）
       S.roundNo = S.data.event.no;
+      S.roundFrom = 'home';
       S.screen = 'round';
       window.scrollTo(0, 0);
       openPopup({ type: 'checked', already: !!j.already });
@@ -1030,13 +1047,21 @@ const ACTIONS = {
     if (boxes.length) ids = Array.from(boxes).filter(b => b.checked).map(b => b.value);
     else ids = curCard() ? [curCard().id] : [];
     if (!ids.length) { popupMsg('CLEARするカードを選んでね'); return; }
+    // いま開いているカードを先頭に（押したミッションは、そのカードに使う。ほかのカードは自動で選ばれる）
+    const curId = curCard() ? curCard().id : '';
+    if (ids.includes(curId)) ids = [curId].concat(ids.filter(x => x !== curId));
+    const idx = S.popup && S.popup.idx ? S.popup.idx : 0;
     await withBusy(async () => {
-      const j = S.pkey ? await api('pClear', [S.pkey, pass]) : await api('clear', [ids, pass]);
+      const j = S.pkey
+        ? await api('pClear', idx ? [S.pkey, pass, idx] : [S.pkey, pass])
+        : await api('clear', idx ? [ids, pass, idx] : [ids, pass]);
       if (j && j.error) { popupMsg(msgOf(j.error)); return; }
       const nameOf = id => { const c = (j.data.cards || []).find(x => x.id === id); return c ? c.name : ''; };
       setData(j.data);
       const results = Array.isArray(j.results) ? j.results : [];
-      const ok = results.filter(r => r.status === 'ok');
+      // 表示はカードの並び順（本人が先）
+      const order = cards().map(x => x.id);
+      const ok = results.filter(r => r.status === 'ok').sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
       const role = (results[0] && results[0].role) || 'M1';
       // こたえが空でスタンプが押せなかっただけのときは、合言葉の画面のまま案内する
       if (results.length && results.every(r => r.status === 'noanswer')) {
@@ -1044,8 +1069,13 @@ const ACTIONS = {
         popupMsg(kid ? 'こたえを かいてから、もういちど あいことばを いれてね' : 'こたえを書いてから、もう一度合言葉を入れてね');
         return;
       }
+      // 同じ人のシールがもうあるときも、合言葉の画面のまま案内する
+      if (results.length && results.every(r => r.status === 'samestaff')) {
+        popupMsg(staffName(role) + 'のシールはもうもらっています。ほかの実行委員に聞いてね');
+        return;
+      }
       S.justCleared = {};
-      ok.forEach(r => { S.justCleared[r.id + r.role] = true; });
+      ok.forEach(r => { S.justCleared[r.id + (r.role === 'cert' ? 'cert' : 'M' + r.idx)] = true; });
       S.popup = {
         type: 'result', role: role, okCount: ok.length,
         okIds: ok.map(r => r.id), okNames: ok.map(r => nameOf(r.id)),
