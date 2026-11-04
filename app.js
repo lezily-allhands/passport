@@ -92,6 +92,14 @@ async function api(fn, args = []) {
 }
 
 /** 送信中は二重送信を防ぐ（ボタンを無効化） */
+/** 押したボタンの文字を「たしかめています…」にする（戻すときは返した関数を呼ぶ） */
+function busyLabel(act, text) {
+  const b = document.querySelector('[data-act="' + act + '"]');
+  if (!b) return () => {};
+  const old = b.textContent;
+  b.textContent = text;
+  return () => { if (document.body.contains(b)) b.textContent = old; };
+}
 async function withBusy(fn) {
   if (S.busy) return;
   S.busy = true;
@@ -134,7 +142,7 @@ function setCur(id) { S.cur = id || ''; store.set('zp_cur', S.cur); }
 function clearCount(c) { return (c.clears || []).filter(Boolean).length; }
 function isKid(c) { return !!c && c.kind === 'kid'; }
 function staffOf(role, list) { return (list || (S.data && S.data.staff) || []).find(s => s.role === role) || null; }
-/** ミッションの担当3人の名前（「はぱさん・よしちゃん・けんさん」） */
+/** ミッションの担当3人の名前（あだなを「・」でつなぐ） */
 function missionStaffNames(list) { return ['M1', 'M2', 'M3'].map(r => staffName(r, list)).join('・'); }
 function staffName(role, list) { const s = staffOf(role, list); return s && s.name ? s.name : (role === 'cert' ? '社長' : '実行委員'); }
 function missionsFor(c) { return (c && Array.isArray(c.missions)) ? c.missions : []; }
@@ -239,7 +247,7 @@ const SCREENS = {
       // 表紙：パスポート手帳の形（ロゴは白い窓の上に置く。ダークモードでも読めるように）
       // ログインすると、表紙が左にひらいて中のページが見えてからホームへ（openCover）
       '<div class="pp-book">' +
-        '<div class="pp-page" aria-hidden="true"><span>ようこそ！</span></div>' +
+        '<div class="pp-page" aria-hidden="true"><span>ようこそ！</span><small class="pp-wait">よみこみ中…</small></div>' +
         '<div class="pp-cover">' +
           '<div class="pp-logo"><img src="logo_lezily.png" width="78" height="81" alt="Lezily レジリー"></div>' +
           '<div class="pp-en" aria-hidden="true">PASSPORT</div>' +
@@ -427,7 +435,7 @@ const SCREENS = {
         ? '<button class="btn" data-act="openPast" data-no="' + esc(h.no) + '">ミッションカードを見る（' + nCards + '枚）</button>'
         : '';
     const photo = safeUrl(h.photoUrl)
-      ? photoLink(h.photoUrl, true) + '<p class="note">Googleドライブで開きます。Lezilyのアカウントで開いてください</p>'
+      ? photoLink(h.photoUrl, true, h.no) + '<p class="note">Googleドライブで開きます。Lezilyのアカウントで開いてください</p>'
       : '<p class="sub">写真はまだありません</p>';
     // 戻るは、来たところへ（ホームから来たらホーム、参加記録から来たら参加記録）
     const back = S.roundFrom === 'home'
@@ -569,13 +577,17 @@ function roundStatus(h, isCur) {
     : isCur ? '<span class="st-cur">今回</span>' : '<span class="st-no">不参加</span>';
 }
 /** 写真フォルダへのリンク。注意書き（文面シートの photo_note）があれば、先に確認を出す */
-function photoNote() { return (S.data && S.data.texts && S.data.texts.photoNote) || ''; }
-function photoLink(url, big) {
+function photoNote(no) {
+  const h = no ? (S.data && S.data.history || []).find(x => x.no === no) : null;
+  return (h && h.photoNote) || (S.data && S.data.texts && S.data.texts.photoNote) || '';
+}
+/** 写真フォルダへのリンク。注意書き（回シートの「写真の注意書き」、なければ文面シートの photo_note）があれば、先に確認を出す */
+function photoLink(url, big, no) {
   const u = safeUrl(url);
   if (!u) return '';
   const label = big ? '写真・動画を見る' : '写真・動画を見る（Googleドライブ）';
-  if (!photoNote()) return extLink(u, label, big ? 'btn' : 'link');
-  return '<button class="' + (big ? 'btn' : 'link-btn') + '" data-act="openPhoto" data-url="' + esc(u) + '">' + label + '</button>';
+  if (!photoNote(no)) return extLink(u, label, big ? 'btn' : 'link');
+  return '<button class="' + (big ? 'btn' : 'link-btn') + '" data-act="openPhoto" data-url="' + esc(u) + '" data-no="' + esc(no || '') + '">' + label + '</button>';
 }
 
 /** QRコード（qr.js の qrcode を使う。SVG の文字列） */
@@ -649,7 +661,7 @@ function renderPopup() {
       '<button class="btn" data-act="closePopup">OK</button>';
   } else if (p.type === 'photo') {
     inner = '<h2 class="h2">写真・動画を見る前に</h2>' +
-      '<p class="pre">' + nl2br(photoNote()) + '</p>' +
+      '<p class="pre">' + nl2br(photoNote(p.no)) + '</p>' +
       extLink(p.url, 'わかりました、見る', 'btn photo-go') +
       '<button class="btn ghost" data-act="closePopup" data-autofocus>もどる</button>';
   } else if (p.type === 'addCard') {
@@ -792,6 +804,8 @@ async function onCredential(resp) {
   if (!token) { prepareLogin(MSG.bad); return; }
   S.busy = true;
   setLoginMsg('ログインしています…');
+  // 11/4：返事を待つあいだに表紙をひらく（待ち時間を感じにくくする）
+  const opening = openCover();
   let j = null;
   try { j = await api('login', [token]); } catch (_) { j = null; }
   S.busy = false;
@@ -799,10 +813,11 @@ async function onCredential(resp) {
     S.sid = j.sid;
     store.set('zp_sid', j.sid);
     setData(j.data);
-    await openCover();
+    await opening;
     goHome(true);
     return;
   }
+  closeCover();
   if (j && j.error === 'denied') {
     S.deniedEmail = typeof j.email === 'string' ? j.email : '';
     go('denied');
@@ -810,6 +825,14 @@ async function onCredential(resp) {
   }
   // denied 以外は、必ず nonce を取り直してボタンを作り直す
   prepareLogin(!j ? MSG.net : j.error === 'retry' ? MSG.retry : msgOf(j.error));
+}
+/** ログインできなかったら、表紙を閉じる */
+function closeCover() {
+  const book = document.querySelector('.pp-book');
+  if (!book) return;
+  book.classList.remove('opening');
+  const cover = book.querySelector('.pp-cover');
+  if (cover && cover.getAnimations) cover.getAnimations().forEach(a => a.cancel());
 }
 /** ログインできたら、パスポートの表紙をひらく（動きを減らす設定のときは、すぐ進む） */
 function openCover() {
@@ -860,7 +883,7 @@ function onAnswerInput(el, field) {
   q.value = value;
   q.dirty = true;
   clearTimeout(q.timer);
-  q.timer = setTimeout(() => flushAnswer(id, idx, f), 800);
+  q.timer = setTimeout(() => flushAnswer(id, idx, f), 1500);
   AQ.set(key, q);
 }
 /** スタンプの結果ごとの説明 */
@@ -978,14 +1001,15 @@ const ACTIONS = {
     });
   },
   openCheckin() { openPopup({ type: 'checkin' }); },
-  openPhoto(el) { const u = safeUrl(el.dataset.url); if (u) openPopup({ type: 'photo', url: u }); },
+  openPhoto(el) { const u = safeUrl(el.dataset.url); if (u) openPopup({ type: 'photo', url: u, no: Number(el.dataset.no) || 0 }); },
   async doCheckin() {
     const el = document.getElementById('cpass');
     const pass = el ? el.value : '';
     if (!pass.trim() || Array.from(pass).length > 50) { popupMsg('合言葉を入力してね'); return; }
+    const undo = busyLabel('doCheckin', 'たしかめています…');
     await withBusy(async () => {
       const j = await api('checkin', [pass]);
-      if (j && j.error) { popupMsg(msgOf(j.error)); return; }
+      if (j && j.error) { undo(); popupMsg(msgOf(j.error)); return; }
       setData(j.data);
       // 参加の合言葉が通ったら、今回の回のページを開く（ミッションカードもそこから開ける）
       S.roundNo = S.data.event.no;
@@ -1051,11 +1075,12 @@ const ACTIONS = {
     const curId = curCard() ? curCard().id : '';
     if (ids.includes(curId)) ids = [curId].concat(ids.filter(x => x !== curId));
     const idx = S.popup && S.popup.idx ? S.popup.idx : 0;
+    const undo = busyLabel('doClear', 'たしかめています…');
     await withBusy(async () => {
       const j = S.pkey
         ? await api('pClear', idx ? [S.pkey, pass, idx] : [S.pkey, pass])
         : await api('clear', idx ? [ids, pass, idx] : [ids, pass]);
-      if (j && j.error) { popupMsg(msgOf(j.error)); return; }
+      if (j && j.error) { undo(); popupMsg(msgOf(j.error)); return; }
       const nameOf = id => { const c = (j.data.cards || []).find(x => x.id === id); return c ? c.name : ''; };
       setData(j.data);
       const results = Array.isArray(j.results) ? j.results : [];
@@ -1066,11 +1091,13 @@ const ACTIONS = {
       // こたえが空でスタンプが押せなかっただけのときは、合言葉の画面のまま案内する
       if (results.length && results.every(r => r.status === 'noanswer')) {
         const kid = results.length === 1 && isKid(findCard(results[0].id));
+        undo();
         popupMsg(kid ? 'こたえを かいてから、もういちど あいことばを いれてね' : 'こたえを書いてから、もう一度合言葉を入れてね');
         return;
       }
       // 同じ人のシールがもうあるときも、合言葉の画面のまま案内する
       if (results.length && results.every(r => r.status === 'samestaff')) {
+        undo();
         popupMsg(staffName(role) + 'のシールはもうもらっています。ほかの実行委員に聞いてね');
         return;
       }

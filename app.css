@@ -99,7 +99,10 @@ button, input, textarea { font: inherit; color: inherit; }
   position: absolute; inset: 0; border-radius: 14px 20px 20px 14px; background: var(--paper); border: 2px solid var(--line);
   display: grid; place-items: center; font-family: var(--f-head); font-size: 30px; color: var(--accent);
 }
+.pp-page { align-content: center; gap: 10px; }
 .pp-page span { opacity: 0; transition: opacity .4s .35s; }
+.pp-wait { font-family: var(--f-body, inherit); font-size: 13px; color: var(--sub); opacity: 0; transition: opacity .4s .9s; }
+.pp-book.opening .pp-wait { opacity: 1; }
 .pp-book.opening .pp-page span { opacity: 1; }
 .login:has(.pp-book.opening) > :not(.pp-book) { opacity: 0; transition: opacity .3s; }
 .pp-cover {
