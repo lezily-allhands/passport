@@ -37,6 +37,11 @@ const MSG = {
   net: '通信できませんでした。電波のよいところで、もう一度ためしてね',
   linkoff: 'このQRは使えなくなりました',
 };
+/** 子どものカードで合言葉を入れたときの文言（ひらがな） */
+const KID_MSG = {
+  wrongcode: 'あいことばが ちがうよ。もういちど たしかめてね',
+  notopen: 'いまは あいことばを うけつけていないよ',
+};
 function msgOf(code) {
   if (code === 'toomany') return 'カードは' + maxCards() + '枚までです';
   return MSG[code] || MSG.server;
@@ -57,7 +62,10 @@ function safePhoto(p) {
   return typeof p === 'string' && p.length <= 45000 && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/.test(p) ? p : '';
 }
 function nl2br(s) { return esc(s).replace(/\r?\n/g, '<br>'); }
-function themeHtml(t) { return String(t || '').trim().split(/[\s　]+/).filter(Boolean).map(esc).join('<br>'); }
+/** テーマ（{漢字|かな} のルビ書きができる。子どもの画面だけルビを出し、ほかは漢字だけ） */
+function themeHtml(t, kid) { return String(t || '').trim().split(/[\s　]+/).filter(Boolean).map(w => rubyText(w, kid)).join('<br>'); }
+/** ルビ書き {漢字|かな} を外した文字（ルビを出さないところ用） */
+function plain(s) { return String(s || '').replace(/\{([^{}|<>]+)\|([^{}|<>]+)\}/g, '$1'); }
 const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
 function parseDate(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''));
@@ -185,7 +193,7 @@ function face(st, size) {
 }
 /** 社長の認定シールの下の帯「社長 ○○」用（表示名の最後の「さん」などを除く） */
 function bareName(n) { return String(n || '').trim().replace(/(さん|くん|君|ちゃん|様|さま)$/, '') || '社長'; }
-function seal(role, size, pop, list) {
+function seal(role, size, pop, list, kid) {
   const st = staffOf(role, list) || { role };
   const cert = role === 'cert';
   const c = safeColor(st.color, cert ? '#C99A2E' : '#E8892F');
@@ -194,11 +202,11 @@ function seal(role, size, pop, list) {
     // 紙の認定シールと同じつくり：上に「認定」、下に「社長 ○○」（金色の帯）
     const nm = bareName(st.name);
     return '<span class="seal gold' + (pop ? ' pop' : '') + '" style="--fs:' + fs + '">' +
-      '<span class="seal-label seal-top">認定</span>' + face(st, size) +
-      '<span class="seal-label">' + (nm === '社長' ? '社長' : '社長 ' + esc(nm)) + '</span></span>';
+      '<span class="seal-label seal-top">' + kt('{認|にん}{定|てい}', kid) + '</span>' + face(st, size) +
+      '<span class="seal-label">' + kt(nm === '社長' ? '{社|しゃ}{長|ちょう}' : '{社|しゃ}{長|ちょう} ' + esc(nm), kid) + '</span></span>';
   }
   return '<span class="seal' + (pop ? ' pop' : '') + '" style="--fs:' + fs + '">' + face(st, size) +
-    '<span class="seal-label" style="background:' + c + '">CLEAR!</span></span>';
+    '<span class="seal-label" style="background:' + c + '">' + (kid ? kt(CLEAR_K, kid) + '!' : 'CLEAR!') + '</span></span>';
 }
 function joinStamp(size) {
   return '<img class="join-stamp" src="stamp_join.png" width="' + size + '" height="' + size + '" alt="参加">';
@@ -340,8 +348,8 @@ const SCREENS = {
       '<button class="chip' + (x.id === c.id ? ' on' : '') + '" data-act="pick" data-id="' + esc(x.id) + '" aria-pressed="' + (x.id === c.id) + '">' +
         '<span class="chip-n">' + esc(cardLabel(x)) + '</span><span class="chip-c">' + clearCount(x) + '/3</span></button>').join('') +
       (list.length < maxCards()
-        ? '<button class="chip add" data-act="addCard">＋ 家族のカード</button>'
-        : '<span class="chip-max">カードは' + maxCards() + '枚までです</span>');
+        ? '<button class="chip add" data-act="addCard"><span>' + kt('＋ {家|か}{族|ぞく}のカード', kid) + '</span></button>'
+        : '<span class="chip-max">' + kt('カードは' + maxCards() + '{枚|まい}までです', kid) + '</span>');
 
     const missionHtml = missionRows(c, null, true);
     const shared = c.kind === 'adult' && c.shareUntil;
@@ -359,11 +367,11 @@ const SCREENS = {
     }
 
     return '<div class="topbar"><button class="back" data-act="home">← ホーム</button></div>' +
-      (d.event.theme ? '<div class="theme small">' + themeHtml(d.event.theme) + '</div>' : '') +
+      (d.event.theme ? '<div class="theme small">' + themeHtml(d.event.theme, kid) + '</div>' : '') +
       '<h1 class="h1 center-t">ミッションカード</h1>' +
       '<div class="chips" role="group" aria-label="カードの切り替え">' + chips + '</div>' +
       (c.kind !== 'self'
-        ? '<div class="owner"><span>' + esc(c.name) + ' さんのカード</span><button class="mini" data-act="askDelete">このカードを削除</button></div>'
+        ? '<div class="owner"><span>' + esc(c.name) + ' さんのカード</span><button class="mini" data-act="askDelete">' + kt('このカードを{削|さく}{除|じょ}', kid) + '</button></div>'
         : '') +
       (c.kind === 'adult'
         ? '<button class="share-btn" data-act="openShare">' + (shared ? esc(c.name) + ' さんのスマホで使用中（QRを見る・止める）' : esc(c.name) + ' さんのスマホでも使う') + '</button>'
@@ -371,19 +379,20 @@ const SCREENS = {
       '<p class="lead">' + (kid ? '3つ クリアしたら ひょうしょうじょうが ひらくよ' : '3つクリアしたら表彰状がひらきます') + '</p>' +
       missionHtml +
       (n < 3
-        ? '<p class="hint">' + (kid ? 'こたえを かいたら、ちかくの おとなに おしえてね' : 'こたえを書いたら、' + esc(missionStaffNames()) + 'のだれかに合言葉を聞いて、そのミッションの欄に入れてね（同じ人は1回まで）') + '（' + n + '/3 クリア）</p>'
-        : '<button class="btn big gold" data-act="cert">3つ達成！ 表彰状を見る →</button>');
+        ? '<p class="hint">' + (kid ? 'こたえを かいたら、ちかくの おとなに おしえてね（' + n + '/3 クリア）' : 'こたえを書いたら、' + esc(missionStaffNames()) + 'のだれかに合言葉を聞いて、そのミッションの欄に入れてね（同じ人は1回まで）（' + n + '/3 クリア）') + '</p>'
+        : '<button class="btn big gold" data-act="cert">' + kt('3つ{達|たっ}{成|せい}！ {表|ひょう}{彰|しょう}{状|じょう}を{見|み}る →', kid) + '</button>');
   },
 
   cert() {
     const d = S.data;
     const c = curCard();
+    const kid = isKid(c);
     if (!c || clearCount(c) < 3) { setTimeout(() => go('card'), 0); return ''; } // 3つ未満なら card に戻す
     return '<div class="topbar"><button class="back" data-act="openCard">← ミッションカード</button></div>' +
       certHtml(c, d.me.name, d.event, d.texts, null, S.justCleared && S.justCleared[c.id + 'cert']) +
       (c.cert
-        ? '<p class="hint ok">おめでとう！ 第' + esc(d.event.no) + '回の表彰状が完成しました</p><button class="btn ghost" data-act="openCard">ミッションカードにもどる</button>'
-        : '<p class="hint">社長の認定スタンプをもらおう。' + esc(staffName('cert')) + 'に合言葉を聞いてね</p><button class="btn big gold" data-act="openClear">合言葉を入力する</button>');
+        ? '<p class="hint ok">' + kt('おめでとう！ {第|だい}' + esc(d.event.no) + '{回|かい}の{表|ひょう}{彰|しょう}{状|じょう}が{完|かん}{成|せい}しました', kid) + '</p><button class="btn ghost" data-act="openCard">ミッションカードにもどる</button>'
+        : '<p class="hint">' + kt('{社|しゃ}{長|ちょう}の{認|にん}{定|てい}スタンプをもらおう。', kid) + esc(staffName('cert')) + kt('に{合|あい}{言|こと}{葉|ば}を{聞|き}いてね', kid) + '</p><button class="btn big gold" data-act="openClear">' + kt('{合|あい}{言|こと}{葉|ば}を{入|にゅう}{力|りょく}する', kid) + '</button>');
   },
 
   record() {
@@ -395,7 +404,7 @@ const SCREENS = {
       return '<li><button class="box rec" data-act="openRound" data-no="' + esc(h.no) + '">' +
         '<span class="rec-main">' +
           '<span class="kicker">第' + esc(h.no) + '回' + (isCur ? '（今回）' : '') + '</span>' +
-          (h.theme ? '<span class="rec-theme">' + esc(h.theme) + '</span>' : '') +
+          (h.theme ? '<span class="rec-theme">' + esc(plain(h.theme)) + '</span>' : '') +
           '<span class="sub">' + fmtDate(h.date, true) + '</span>' +
           '<span class="rec-more">写真・くわしく見る →</span>' +
         '</span>' +
@@ -469,15 +478,15 @@ const SCREENS = {
     const chips = list.map(x =>
       '<button class="chip' + (x.id === c.id ? ' on' : '') + '" data-act="pickPast" data-id="' + esc(x.id) + '" aria-pressed="' + (x.id === c.id) + '">' +
         '<span class="chip-n">' + esc(cardLabel(x)) + '</span><span class="chip-c">' + clearCount(x) + '/3</span></button>').join('');
-    return '<div class="topbar"><button class="back" data-act="roundBack">← 第' + esc(d.event.no) + '回にもどる</button></div>' +
-      '<div class="kicker center-t">第' + esc(d.event.no) + '回</div>' +
-      (d.event.theme ? '<div class="theme small">' + themeHtml(d.event.theme) + '</div>' : '') +
+    return '<div class="topbar"><button class="back" data-act="roundBack">' + kt('← {第|だい}' + esc(d.event.no) + '{回|かい}にもどる', kid) + '</button></div>' +
+      '<div class="kicker center-t">' + kt('{第|だい}' + esc(d.event.no) + '{回|かい}', kid) + '</div>' +
+      (d.event.theme ? '<div class="theme small">' + themeHtml(d.event.theme, kid) + '</div>' : '') +
       '<h1 class="h1 center-t">ミッションカード</h1>' +
       '<div class="chips" role="group" aria-label="カードの切り替え">' + chips + '</div>' +
       (c.kind !== 'self' ? '<div class="owner"><span>' + esc(c.name) + ' さんのカード</span></div>' : '') +
       missionRows(c, d.staff || [], false) +
       (clearCount(c) >= 3
-        ? '<button class="btn big gold" data-act="pastCert">' + (kid ? 'ひょうしょうじょうを見る →' : '表彰状を見る →') + '</button>'
+        ? '<button class="btn big gold" data-act="pastCert">' + (kid ? kt('{表|ひょう}{彰|しょう}{状|じょう}を{見|み}る →', kid) : '表彰状を見る →') + '</button>'
         : '');
   },
 
@@ -507,10 +516,10 @@ function missionRows(c, staffList, editable) {
     const ans = (c.answers || [])[i] || '';
     const who = (c.whos || [])[i] || '';
     const whoHtml = editable
-      ? '<label class="who-row"><span class="who-l">' + (kid ? 'きいた人' : '聞いた人') + '</span>' +
+      ? '<label class="who-row"><span class="who-l">' + (kid ? kt('きいた{人|ひと}', kid) : '聞いた人') + '</span>' +
           '<input class="who" type="text" maxlength="20" autocomplete="off" data-card="' + esc(c.id) + '" data-idx="' + (i + 1) + '" placeholder="' +
           (kid ? 'だれに きいた？' : '話を聞いた人の名前') + '" aria-label="MISSION ' + (i + 1) + ' で話を聞いた人" value="' + esc(who) + '"></label>'
-      : (who ? '<p class="who-view"><span class="who-l">' + (kid ? 'きいた人' : '聞いた人') + '</span>' + esc(who) + '</p>' : '');
+      : (who ? '<p class="who-view"><span class="who-l">' + (kid ? kt('きいた{人|ひと}', kid) : '聞いた人') + '</span>' + esc(who) + '</p>' : '');
     const answerHtml = editable
       ? '<textarea class="ans" rows="2" maxlength="200" data-card="' + esc(c.id) + '" data-idx="' + (i + 1) + '" placeholder="' +
           (kid ? 'こたえをかこう' : '聞いたことをメモ') + '" aria-label="MISSION ' + (i + 1) + ' のこたえ">' + esc(ans) + '</textarea>'
@@ -518,14 +527,14 @@ function missionRows(c, staffList, editable) {
     // 11/2：どのミッションも M1〜M3 のだれでもCLEARできる。シールはCLEARした人の顔
     const by = (c.clearBy || [])[i] || role;
     const slot = done
-      ? seal(by, 62, editable && S.justCleared && S.justCleared[c.id + role], staffList)
-      : editable ? dotted('CLEAR') : dotted('');
+      ? seal(by, 62, editable && S.justCleared && S.justCleared[c.id + role], staffList, kid)
+      : editable ? dotted(kid ? kt(CLEAR_K, kid) : 'CLEAR') : dotted('');
     return '<div class="mission' + (done ? ' done' : '') + '">' +
       '<div class="m-main">' +
-        '<div class="m-no" style="color:' + sc + '">MISSION ' + (i + 1) + '</div>' +
+        '<div class="m-no" style="color:' + sc + '">' + (kid ? kt(MISSION_K, kid) : 'MISSION') + ' ' + (i + 1) + '</div>' +
         '<p class="m-text">' +
-          '<span class="tag" style="background:' + sc + '">' + (kid ? 'だれに' : '誰に') + '</span> ' + esc(m.who) + '<br>' +
-          (m.label ? '<span class="tag" style="background:' + mc + '">' + esc(m.label) + '</span> ' : '') + esc(m.q) +
+          '<span class="tag" style="background:' + sc + '">' + (kid ? 'だれに' : '誰に') + '</span> ' + rubyText(m.who, kid) + '<br>' +
+          (m.label ? '<span class="tag" style="background:' + mc + '">' + rubyText(m.label, kid) + '</span> ' : '') + rubyText(m.q, kid) +
         '</p>' +
         whoHtml +
         answerHtml +
@@ -544,6 +553,10 @@ function rb(base, ruby) { return '<ruby>' + esc(base) + '<rt>' + esc(ruby) + '</
 function rubyText(s, kid) {
   return nl2br(s).replace(/\{([^{}|<>]+)\|([^{}|<>]+)\}/g, (m, base, ruby) => kid ? '<ruby>' + base + '<rt>' + ruby + '</rt></ruby>' : base);
 }
+/** 子どもの画面の文言：{漢字|かな} をルビにする（大人の画面では漢字だけ）。s は HTML として安全な文字列 */
+function kt(s, kid) { return String(s).replace(/\{([^{}|<>]+)\|([^{}|<>]+)\}/g, (m, base, ruby) => kid ? '<ruby>' + base + '<rt>' + ruby + '</rt></ruby>' : base); }
+const MISSION_K = '{MISSION|ミッション}';
+const CLEAR_K = '{CLEAR|クリア}';
 function kidDate(s) {
   const p = parseDate(s);
   if (!p) return esc(s || '');
@@ -565,7 +578,7 @@ function certHtml(c, selfName, ev, texts, staffList, pop) {
       '<p class="cert-body">' + rubyText(body || '', kid) + '</p>' +
       '<div class="cert-foot">' +
         '<div class="cert-sign"><div>' + (kid ? kidDate(ev.date) : fmtDate(ev.date, false)) + '</div><div>' + rubyText(texts.signature || '', kid) + '</div></div>' +
-        '<div class="cert-seal">' + (c.cert ? seal('cert', 74, pop, staffList) : dotted(staffList ? '' : 'ここに<br>社長の<br>認定スタンプ', true)) + '</div>' +
+        '<div class="cert-seal">' + (c.cert ? seal('cert', 74, pop, staffList, kid) : dotted(staffList ? '' : kt('ここに<br>{社|しゃ}{長|ちょう}の<br>{認|にん}{定|てい}スタンプ', kid), true)) + '</div>' +
       '</div>' +
     '</div>' +
   '</div>';
@@ -619,33 +632,34 @@ function renderPopup() {
     const c = curCard();
     const kidC = c && isKid(c);
     inner = (p.idx
-      ? '<h2 class="h2">MISSION ' + p.idx + ' の' + (kidC ? 'あいことば' : '合言葉') + '</h2>' +
+      ? '<h2 class="h2">' + (kidC ? kt(MISSION_K, true) : 'MISSION') + ' ' + p.idx + ' の' + (kidC ? 'あいことば' : '合言葉') + '</h2>' +
         '<p>' + esc(missionStaffNames()) + (kidC ? 'の だれかに おしえてもらった あいことばを いれてね' : 'のだれかに教えてもらった合言葉を入れてね（同じ人は1回まで）') + '</p>'
-      : '<h2 class="h2">合言葉を入力</h2>' +
-        '<p>実行委員に教えてもらった合言葉を入れてね</p>') +
+      : '<h2 class="h2">' + kt('{合|あい}{言|こと}{葉|ば}を{入|にゅう}{力|りょく}', kidC) + '</h2>' +
+        '<p>' + kt('{実|じっ}{行|こう}{委|い}{員|いん}に{教|おし}えてもらった{合|あい}{言|こと}{葉|ば}を{入|い}れてね', kidC) + '</p>') +
       '<input id="pass" class="input" type="text" maxlength="50" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-autofocus aria-label="合言葉">' +
       (list.length > 1
-        ? '<fieldset class="pick"><legend>CLEARするカード</legend>' + list.map(x =>
+        ? '<fieldset class="pick"><legend>' + (kidC ? kt(CLEAR_K, true) : 'CLEAR') + 'するカード</legend>' + list.map(x =>
             '<label class="check"><input type="checkbox" name="cc" value="' + esc(x.id) + '"' + (x.id === c.id ? ' checked' : '') + '> ' +
             esc(cardLabel(x)) + ' <span class="sub">' + clearCount(x) + '/3</span></label>').join('') + '</fieldset>'
         : '') +
       '<p id="pmsg" class="pmsg" role="alert"></p>' +
-      '<button class="btn" data-act="doClear">CLEARする</button>' +
+      '<button class="btn" data-act="doClear">' + (kidC ? kt(CLEAR_K, true) : 'CLEAR') + 'する</button>' +
       '<button class="btn ghost" data-act="closePopup">とじる</button>';
   } else if (p.type === 'result') {
     const names = p.okNames;
     const role = p.role;
-    const head = role === 'cert' ? '社長認定スタンプをゲットしました！' : esc(staffName(role)) + 'のスタンプをゲットしました！';
+    const k = !!p.kid;
+    const head = role === 'cert' ? kt('{社|しゃ}{長|ちょう}{認|にん}{定|てい}スタンプをゲットしました！', k) : esc(staffName(role)) + 'のスタンプをゲットしました！';
     inner = (p.okCount
-        ? '<div class="celebrate">' + seal(role, 120, true) + '</div>' +
+        ? '<div class="celebrate">' + seal(role, 120, true, null, k) + '</div>' +
           '<h2 class="h2 center-t">' + head + '</h2>' +
           (names.length > 1 ? '<p class="center-t">' + names.map(n => esc(n) + ' さん').join('、') + ' がゲット！</p>' : '')
-        : '<h2 class="h2 center-t">CLEARはありませんでした</h2>') +
+        : '<h2 class="h2 center-t">' + (k ? kt(CLEAR_K, k) : 'CLEAR') + 'はありませんでした</h2>') +
       (p.others.length
         ? '<ul class="others">' + p.others.map(o => '<li>' + esc(o.name) + ' さん：' +
             statusMsg(o) + '</li>').join('') + '</ul>'
         : '') +
-      '<button class="btn' + (role === 'cert' && p.okCount ? ' gold' : '') + '" data-act="closeResult">' + (role === 'cert' && p.okCount ? '表彰状を見る' : 'OK') + '</button>';
+      '<button class="btn' + (role === 'cert' && p.okCount ? ' gold' : '') + '" data-act="closeResult">' + (role === 'cert' && p.okCount ? kt('{表|ひょう}{彰|しょう}{状|じょう}を{見|み}る', k) : 'OK') + '</button>';
   } else if (p.type === 'checkin') {
     inner = '<h2 class="h2">参加の合言葉</h2>' +
       '<p>受付で教えてもらった合言葉を入れてね</p>' +
@@ -888,10 +902,10 @@ function onAnswerInput(el, field) {
 }
 /** スタンプの結果ごとの説明 */
 function statusMsg(o) {
-  if (o.status === 'already') return 'もうクリア済みです';
+  if (o.status === 'already') return o.kid ? 'もう クリアしているよ' : 'もうクリア済みです';
   if (o.status === 'samestaff') return o.kid ? 'この ひとの シールは もう もらっているよ' : 'この人のシールはもうもらっています';
   if (o.status === 'noanswer') return o.kid ? 'こたえを かいてから もういちど いれてね' : 'こたえを書いてから、もう一度合言葉を入れてね';
-  return '3つクリアしてから、社長の認定をもらってね';
+  return kt('3つクリアしてから、{社|しゃ}{長|ちょう}の{認|にん}{定|てい}をもらってね', o.kid);
 }
 /** 送信待ちのこたえ・聞いた人を、すぐに送り切る（合言葉の前に呼ぶ） */
 async function flushPending() {
@@ -1080,7 +1094,7 @@ const ACTIONS = {
       const j = S.pkey
         ? await api('pClear', idx ? [S.pkey, pass, idx] : [S.pkey, pass])
         : await api('clear', idx ? [ids, pass, idx] : [ids, pass]);
-      if (j && j.error) { undo(); popupMsg(msgOf(j.error)); return; }
+      if (j && j.error) { undo(); popupMsg(isKid(curCard()) && KID_MSG[j.error] ? KID_MSG[j.error] : msgOf(j.error)); return; }
       const nameOf = id => { const c = (j.data.cards || []).find(x => x.id === id); return c ? c.name : ''; };
       setData(j.data);
       const results = Array.isArray(j.results) ? j.results : [];
@@ -1098,13 +1112,13 @@ const ACTIONS = {
       // 同じ人のシールがもうあるときも、合言葉の画面のまま案内する
       if (results.length && results.every(r => r.status === 'samestaff')) {
         undo();
-        popupMsg(staffName(role) + 'のシールはもうもらっています。ほかの実行委員に聞いてね');
+        popupMsg(isKid(curCard()) ? staffName(role) + 'の シールは もう もらっているよ。ほかの じっこういいんに きいてね' : staffName(role) + 'のシールはもうもらっています。ほかの実行委員に聞いてね');
         return;
       }
       S.justCleared = {};
       ok.forEach(r => { S.justCleared[r.id + (r.role === 'cert' ? 'cert' : 'M' + r.idx)] = true; });
       S.popup = {
-        type: 'result', role: role, okCount: ok.length,
+        type: 'result', role: role, okCount: ok.length, kid: isKid(curCard()),
         okIds: ok.map(r => r.id), okNames: ok.map(r => nameOf(r.id)),
         others: results.filter(r => r.status !== 'ok').map(r => ({ name: nameOf(r.id), status: r.status, kid: isKid(findCard(r.id)) })),
       };

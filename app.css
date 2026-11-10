@@ -323,3 +323,13 @@ button, input, textarea { font: inherit; color: inherit; }
   font: inherit; font-weight: 800; font-size: 14px; cursor: pointer;
 }
 .m-pass:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+
+/* 子どもの画面のルビ（11/10） */
+#app[data-kid="1"] rt { font-size: .46em; font-weight: 700; letter-spacing: -.06em; margin-inline: -.15em; }
+#app[data-kid="1"] .btn, #app[data-kid="1"] .hint, #app[data-kid="1"] .m-pass, #app[data-kid="1"] .chip { line-height: 2; }
+#app[data-kid="1"] .m-no { line-height: 2.1; }
+#app[data-kid="1"] .m-no rt { font-family: var(--f-body); }
+#app[data-kid="1"] .seal-label { line-height: 1.9; }
+#app[data-kid="1"] .seal-label rt { font-size: .62em; }
+#app[data-kid="1"] .slot rt { font-size: .7em; }
+#app[data-kid="1"] .modal .h2 { line-height: 1.9; }
